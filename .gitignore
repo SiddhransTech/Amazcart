@@ -1,4 +1,5 @@
 *.zip
 node_modules/
 storage/logs/
-vendor/
+vendor/krafto.zip
+codecanyon-AeElzcAs-amazcart-laravel-ecommerce-system-cms.zip
