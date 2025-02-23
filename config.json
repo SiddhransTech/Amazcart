@@ -1,0 +1,10 @@
+{
+  "version": "4.6",
+  "release_date": "10/12/2024",
+  "min": "4.5",
+  "migrations": [
+
+    ],
+  "url": "https://spondonit.com/contact",
+  "notes": "This is a bug fixing, design improve, new feature added. Minimum amazcart version required 4.5"
+}
