@@ -89,6 +89,9 @@ initScene();
 createControls();
 window.addEventListener('resize', updateSceneSize);
 
+updateSceneSize();
+renderer.render(scene, camera);
+
 // --------------------------------------------------
 // Three.js scene
 
@@ -149,6 +152,7 @@ function initScene() {
     createZooming();
 
     render();
+    
 }
 
 function render() {
@@ -683,7 +687,6 @@ function createControls() {
 
 // Power start 😁
 // 3D Box Controller
-let selectedFace = null;
 function setupFaceViewControls() {
     const btnFront = document.querySelector('.b1');
     const btnLeft = document.querySelector('.b2');
