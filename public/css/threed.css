@@ -349,12 +349,12 @@ a:focus-visible {
 	margin-bottom: 10px;
 }
 
-.btn {
-	padding: 10px;
-	border: none;
+.btn1, .btn2, .btn3, .btn4, .btn5 {
+	padding: 2px;
 	cursor: pointer;
-	background-color: #6799b1;
+	background-color: rgb(218, 232, 236);
 	border-radius: 5px;
+	border-color: transparent;
 }
 
 .b1, .b2, .b3, .b4, .b5, .b6 {
@@ -461,6 +461,13 @@ a:focus-visible {
 	color: white;
 	padding: 10px 20px;
 	border-radius: 5px;
+	border: none;
+	cursor: pointer;
+	transition: background-color 0.3s ease;
+}
+
+.add-to-cart:hover {
+	background-color: rgb(226, 84, 13);
 }
 
 /* 3D Container */

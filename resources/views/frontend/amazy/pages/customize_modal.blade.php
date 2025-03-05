@@ -50,11 +50,11 @@
                         <!-- Right Panel -->
                         <div class="customization-container">
                             <div class="button-group">
-                                <button class="btn upload" id="upload-btn">Upload</button>
-                                <button class="btn reset" id="reset-btn">Reset</button>
-                                <button class="btn rotate" id="rotate-btn">Rotate</button>
-                                <button class="btn close" id="close-box-btn">Open Box</button>
-                                <button class="btn open" id="open-box-btn">Close Box</button>
+                                <button class="btn1 upload" id="upload-btn">Upload</button>
+                                <button class="btn2 reset" id="reset-btn">Reset</button>
+                                <button class="btn3 rotate" id="rotate-btn">Rotate</button>
+                                <button class="btn4 closes" id="close-btn-box">Open Box</button>
+                                <button class="btn5 open" id="open-box-btn">Close Box</button>
                             </div>
                             
                             <div class="button-group">
@@ -125,7 +125,7 @@
                             <div class="pricing">
                                 <span class="quantity">3000</span>
                                 <span class="price">₹12.44</span>
-                                <button class="btn add-to-cart">ADD TO CART</button>
+                                <button class="add-to-cart">ADD TO CART</button>
                             </div>
                         </div>
                     </div>

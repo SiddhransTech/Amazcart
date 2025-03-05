@@ -89,9 +89,6 @@ initScene();
 createControls();
 window.addEventListener('resize', updateSceneSize);
 
-updateSceneSize();
-renderer.render(scene, camera);
-
 // --------------------------------------------------
 // Three.js scene
 
@@ -511,7 +508,7 @@ function createFoldingAnimation() {
         }, "-=0.7");
 
     // Event listener for "Close Box" button (optional)
-    const closeBtn = document.getElementById('close-box-btn');
+    const closeBtn = document.getElementById('close-btn-box');
     if (closeBtn) {
         closeBtn.addEventListener('click', () => {
             openTimeline.pause(); // Stop opening if running
@@ -687,6 +684,7 @@ function createControls() {
 
 // Power start 😁
 // 3D Box Controller
+let selectedFace = null;
 function setupFaceViewControls() {
     const btnFront = document.querySelector('.b1');
     const btnLeft = document.querySelector('.b2');
