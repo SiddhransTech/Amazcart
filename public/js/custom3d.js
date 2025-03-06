@@ -622,7 +622,7 @@ function createZooming() {
 // Range sliders for box parameters
 function createControls() {
     const gui = new GUI();
-    const modalBody = document.querySelector('.content11');
+    const modalBody = document.querySelector('.modal-panel-left');
 
     if (modalBody) {
         modalBody.appendChild(gui.domElement); // Append GUI inside content11
@@ -634,7 +634,7 @@ function createControls() {
 
         gui.domElement.style.position = 'absolute';
         gui.domElement.style.top = '15px';
-        gui.domElement.style.right = '8px';
+        gui.domElement.style.left = '8px';
         gui.domElement.style.zIndex = '1000'; // Ensure it appears above other elements
         gui.domElement.style.width = screenWidth < 768 ? '80%' : '250px'; // Responsive width
 
