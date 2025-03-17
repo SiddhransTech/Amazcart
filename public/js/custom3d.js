@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { mergeBufferGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
 
 // Check for gsap (loaded via HTML script tags)
 if (typeof gsap === 'undefined') {
@@ -49,7 +50,7 @@ let box = {
 };
 
 // Globals
-let renderer, scene, camera, orbit, lightHolder, rayCaster, mouse, copyright;
+let renderer, scene, camera, orbit, lightHolder, rayCaster, mouse, copyright,transformControls;
 
 // Run the app
 initScene();
@@ -92,6 +93,19 @@ function initScene() {
     orbit.enableDamping = true;
     orbit.autoRotate = false;
     orbit.autoRotateSpeed = .25;
+
+    // Initialize TransformControls
+    transformControls = new TransformControls(camera, renderer.domElement);
+    transformControls.setSize(0.5); // Smaller controls for better UI
+    transformControls.setTranslationSnap(0.1); // Snap to grid while moving
+    transformControls.setRotationSnap(THREE.MathUtils.degToRad(15)); // Snap to 15-degree increments
+    transformControls.setScaleSnap(0.1); // Snap to 0.1 increments while scaling
+    scene.add(transformControls);
+
+    // Disable OrbitControls while using TransformControls
+    transformControls.addEventListener('dragging-changed', (event) => {
+        orbit.enabled = !event.value;
+    });
 
     setupFaceViewControls();
     createCopyright();
@@ -216,10 +230,39 @@ function createCopyright() {
     copyright = new THREE.Mesh(planeGeometry, new THREE.MeshBasicMaterial({ map: texture, transparent: true, opacity: 1 }));
     scene.add(copyright);
 
-    function updateCanvasText(text, fontStyle, fontSize) {
+    // Position the copyright mesh on the front face
+    const frontLengthSide = box.els.frontHalf.length.side;
+    copyright.position.copy(frontLengthSide.position);
+    copyright.position.x += box.params.length / 2 - (copyright.geometry.parameters.width / 2);
+    copyright.position.y = 0;
+    copyright.position.z = frontLengthSide.position.z + (box.params.thickness / 2) + 0.1;
+    copyright.rotation.copy(frontLengthSide.rotation);
+
+    // Attach TransformControls to the copyright mesh
+    transformControls.attach(copyright);
+
+    // Function to update the canvas with text and/or image
+    function updateCanvasText(text, fontStyle, fontSize, image = null) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // If an image is provided, draw it first
+        if (image) {
+            const aspectRatio = image.width / image.height;
+            let drawWidth = canvas.width;
+            let drawHeight = canvas.height;
+            if (drawWidth / drawHeight > aspectRatio) {
+                drawWidth = drawHeight * aspectRatio;
+            } else {
+                drawHeight = drawWidth / aspectRatio;
+            }
+            const xOffset = (canvas.width - drawWidth) / 2;
+            const yOffset = (canvas.height - drawHeight) / 2;
+            ctx.drawImage(image, xOffset, yOffset, drawWidth, drawHeight);
+        }
+
+        // Draw the text on top
         ctx.fillStyle = '#000000';
-        const scaledFontSize = fontSize * 20; // Scale font size to match canvas resolution
+        const scaledFontSize = fontSize * 20;
         ctx.font = `${scaledFontSize}px ${fontStyle}`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -232,7 +275,7 @@ function createCopyright() {
     const initialFontSize = parseInt(document.getElementById('fontSize')?.value) || 20;
     updateCanvasText(textInput.value || 'Your Text Here', initialFontStyle, initialFontSize);
 
-    // Expose update function globally so it can be called from customize_modal.blade.php
+    // Expose update function globally
     window.updateCopyrightText = function(text, fontStyle, fontSize) {
         updateCanvasText(text, fontStyle, fontSize);
     };
@@ -243,7 +286,7 @@ function createCopyright() {
         updateCanvasText(textInput.value || 'Your Text Here', fontStyle, fontSize);
     });
 
-    // Initialize uploadInput globally
+    // Initialize uploadInput
     uploadInput = document.createElement('input');
     uploadInput.type = 'file';
     uploadInput.accept = 'image/*';
@@ -268,42 +311,66 @@ function createCopyright() {
         reader.onload = (e) => {
             const img = new Image();
             img.onload = () => {
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                const aspectRatio = img.width / img.height;
-                let drawWidth = canvas.width;
-                let drawHeight = canvas.height;
-                if (drawWidth / drawHeight > aspectRatio) {
-                    drawWidth = drawHeight * aspectRatio;
-                } else {
-                    drawHeight = drawWidth / aspectRatio;
-                }
-                const xOffset = (canvas.width - drawWidth) / 2;
-                const yOffset = (canvas.height - drawHeight) / 2;
-                ctx.drawImage(img, xOffset, yOffset, drawWidth, drawHeight);
-                
-                // Overlay text with selected font style and size
                 const fontStyle = document.getElementById('fontStyle')?.value || 'Helvetica';
                 const fontSize = parseInt(document.getElementById('fontSize')?.value) || 20;
-                ctx.fillStyle = '#000000';
-                const scaledFontSize = fontSize * 20;
-                ctx.font = `${scaledFontSize}px ${fontStyle}`;
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
                 const text = textInput.value || 'Your Text Here';
-                ctx.fillText(text, canvas.width / 2, canvas.height / 2);
-                texture.needsUpdate = true;
+                updateCanvasText(text, fontStyle, fontSize, img);
             };
             img.src = e.target.result;
         };
         reader.readAsDataURL(file);
     });
 
-    const frontLengthSide = box.els.frontHalf.length.side;
-    copyright.position.copy(frontLengthSide.position);
-    copyright.position.x += box.params.breadth / 2 - (copyright.geometry.parameters.width / 2);
-    copyright.position.y = 0;
-    copyright.position.z = frontLengthSide.position.z + (box.params.thickness / 2);
-    copyright.rotation.copy(frontLengthSide.rotation);
+    // Add transformation mode buttons
+    createTransformControlsUI();
+}
+
+function createTransformControlsUI() {
+    const container = document.querySelector('.ui-controls');
+    if (!container) {
+        console.error('UI controls container not found in the DOM.');
+        return;
+    }
+
+    // Create a div for transform controls
+    const transformControlsDiv = document.createElement('div');
+    transformControlsDiv.className = 'transform-controls';
+    transformControlsDiv.style.marginTop = '10px';
+
+    // Translate button (Move)
+    const translateBtn = document.createElement('button');
+    translateBtn.className = 'unbutton ui-controls__button transform-icon';
+    translateBtn.innerHTML = '<i class="fas fa-arrows-alt"></i>'; // FontAwesome icon for move
+    translateBtn.title = 'Move Image'; // Tooltip for accessibility
+    translateBtn.addEventListener('click', () => {
+        transformControls.setMode('translate');
+    });
+
+    // Rotate button
+    const rotateBtn = document.createElement('button');
+    rotateBtn.className = 'unbutton ui-controls__button transform-icon';
+    rotateBtn.innerHTML = '<i class="fas fa-sync-alt"></i>'; // FontAwesome icon for rotate
+    rotateBtn.title = 'Rotate Image'; // Tooltip for accessibility
+    rotateBtn.addEventListener('click', () => {
+        transformControls.setMode('rotate');
+    });
+
+    // Scale button
+    const scaleBtn = document.createElement('button');
+    scaleBtn.className = 'unbutton ui-controls__button transform-icon';
+    scaleBtn.innerHTML = '<i class="fas fa-expand-arrows-alt"></i>'; // FontAwesome icon for scale
+    scaleBtn.title = 'Scale Image'; // Tooltip for accessibility
+    scaleBtn.addEventListener('click', () => {
+        transformControls.setMode('scale');
+    });
+
+    // Append buttons to the div
+    transformControlsDiv.appendChild(translateBtn);
+    transformControlsDiv.appendChild(rotateBtn);
+    transformControlsDiv.appendChild(scaleBtn);
+
+    // Append the div to the UI controls container
+    container.appendChild(transformControlsDiv);
 }
 
 // Animation
@@ -367,12 +434,15 @@ function updatePanelsTransform() {
     box.els.backHalf.breadth.bottom.rotation.x = -box.animated.flapAngles.backHalf.breadth.bottom;
     box.els.backHalf.length.bottom.rotation.x = -box.animated.flapAngles.backHalf.length.bottom;
 
-    const frontLengthSide = box.els.frontHalf.length.side;
-    copyright.position.copy(frontLengthSide.position);
-    copyright.position.x += box.params.length / 2 - (copyright.geometry.parameters.width / 2);
-    copyright.position.y = 0;
-    copyright.position.z = frontLengthSide.position.z + (box.params.thickness / 2) + 0.1;
-    copyright.rotation.copy(frontLengthSide.rotation);
+    // Update copyright position
+    if (copyright) {
+        const frontLengthSide = box.els.frontHalf.length.side;
+        copyright.position.copy(frontLengthSide.position);
+        copyright.position.x += box.params.length / 2 - (copyright.geometry.parameters.width / 2);
+        copyright.position.y = 0;
+        copyright.position.z = frontLengthSide.position.z + (box.params.thickness / 2) + 0.1;
+        copyright.rotation.copy(frontLengthSide.rotation);
+    }
 
     if (textMesh) {
         textMesh.position.copy(box.els.frontHalf.length.side.position);
@@ -530,6 +600,14 @@ function saveBoxConfiguration() {
 }
 
 document.querySelector('.add-to-cart').addEventListener('click', saveBoxConfiguration);
+
+
+
+
+
+
+
+
 // For Rotate button
 // let isRotating = false;
 // let rotationRequest; // Store the animation frame request

@@ -9,7 +9,7 @@
     <!-- Use url() or asset() consistently; assuming Laravel, ensure paths are correct -->
     <link rel="stylesheet" type="text/css" href="{{ url('css/threed.css') }}">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
     <!-- ES Module Shims for module imports -->
     <script async src="https://unpkg.com/es-module-shims@1.3.6/dist/es-module-shims.js"></script>
     <script type="importmap">
@@ -22,8 +22,10 @@
         }
     </script>
     
+    <script type="module" src="{{ url('js/custom3d.js') }}"></script>
     <!-- External scripts -->
     <script src="{{ url('js/bootstrap.bundle.min.js') }}"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.9.1/gsap.min.js"></script>
     <script src="https://unpkg.co/gsap@3/dist/gsap.min.js"></script>
 </head>
 <body>
@@ -138,7 +140,6 @@
     </div>
 
     <!-- Scripts -->
-    <script type="module" src="{{ url('js/custom3d.js') }}"></script>
 <script>
     document.addEventListener("DOMContentLoaded", function () {
         const options = document.querySelectorAll(".option");
