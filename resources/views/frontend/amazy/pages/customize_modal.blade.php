@@ -16,7 +16,8 @@
         {
             "imports": {
                 "three": "https://unpkg.com/three@0.138.0/build/three.module.js",
-                "three/addons/": "https://unpkg.com/three@0.138.0/examples/jsm/"
+                "three/addons/": "https://unpkg.com/three@0.138.0/examples/jsm/",
+                "three/addons/controls/TransformControls.js": "https://unpkg.com/three@0.138.0/examples/jsm/controls/TransformControls.js"
             }
         }
     </script>
@@ -24,10 +25,6 @@
     <!-- External scripts -->
     <script src="{{ url('js/bootstrap.bundle.min.js') }}"></script>
     <script src="https://unpkg.co/gsap@3/dist/gsap.min.js"></script>
-    <!-- Remove redundant Three.js script since we're using modules -->
-    <!-- <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script> -->
-    <!-- TransformControls is not used in custom3d.js, so it can be removed unless needed elsewhere -->
-    <!-- <script src="https://cdn.jsdelivr.net/npm/three@0.141.0/examples/js/controls/TransformControls.js"></script> -->
 </head>
 <body>
     <!-- Modal -->
@@ -142,7 +139,7 @@
 
     <!-- Scripts -->
     <script type="module" src="{{ url('js/custom3d.js') }}"></script>
-    <script>
+<script>
     document.addEventListener("DOMContentLoaded", function () {
         const options = document.querySelectorAll(".option");
         const flexoRadio = document.getElementById("flexo");
@@ -248,13 +245,32 @@
         const fontStyleSelect = document.getElementById("fontStyle");
         const fontSizeSelect = document.getElementById("fontSize");
 
+        // Function to update the 3D box text
+        function updateBoxText() {
+            const fontStyle = fontStyleSelect.value;
+            const fontSize = parseInt(fontSizeSelect.value); // Remove 'px' and get numeric value
+            const text = document.querySelector('.text-input').value || 'Your Text Here';
+
+            // Call a function in custom3d.js to update the copyright text
+            if (typeof window.updateCopyrightText === 'function') {
+                window.updateCopyrightText(text, fontStyle, fontSize);
+            }
+        }
+
+        // Update text when font style changes
         fontStyleSelect.addEventListener("change", function() {
             console.log("Selected font style:", this.value);
+            updateBoxText();
         });
 
+        // Update text when font size changes
         fontSizeSelect.addEventListener("change", function() {
             console.log("Selected font size:", this.value);
+            updateBoxText();
         });
+
+        // Update text when text input changes
+        document.querySelector('.text-input').addEventListener('input', updateBoxText);
 
         populateDropdowns();
         toggleAdditionalInputs();
@@ -265,6 +281,6 @@
 
         console.log("Script loaded and executed");
     });
-    </script>
+</script>
 </body>
 </html>

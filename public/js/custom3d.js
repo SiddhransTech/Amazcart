@@ -216,20 +216,32 @@ function createCopyright() {
     copyright = new THREE.Mesh(planeGeometry, new THREE.MeshBasicMaterial({ map: texture, transparent: true, opacity: 1 }));
     scene.add(copyright);
 
-    function updateCanvasText() {
+    function updateCanvasText(text, fontStyle, fontSize) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.fillStyle = '#000000';
-        const fontSize = Math.min(copyrightHeight * 20, 50);
-        ctx.font = `${fontSize}px Helvetica`;
+        const scaledFontSize = fontSize * 20; // Scale font size to match canvas resolution
+        ctx.font = `${scaledFontSize}px ${fontStyle}`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        const text = textInput.value || 'Your Text Here';
         ctx.fillText(text, canvas.width / 2, canvas.height / 2);
         texture.needsUpdate = true;
     }
 
-    updateCanvasText();
-    textInput.addEventListener('input', updateCanvasText);
+    // Initial text update
+    const initialFontStyle = document.getElementById('fontStyle')?.value || 'Helvetica';
+    const initialFontSize = parseInt(document.getElementById('fontSize')?.value) || 20;
+    updateCanvasText(textInput.value || 'Your Text Here', initialFontStyle, initialFontSize);
+
+    // Expose update function globally so it can be called from customize_modal.blade.php
+    window.updateCopyrightText = function(text, fontStyle, fontSize) {
+        updateCanvasText(text, fontStyle, fontSize);
+    };
+
+    textInput.addEventListener('input', () => {
+        const fontStyle = document.getElementById('fontStyle')?.value || 'Helvetica';
+        const fontSize = parseInt(document.getElementById('fontSize')?.value) || 20;
+        updateCanvasText(textInput.value || 'Your Text Here', fontStyle, fontSize);
+    });
 
     // Initialize uploadInput globally
     uploadInput = document.createElement('input');
@@ -268,9 +280,13 @@ function createCopyright() {
                 const xOffset = (canvas.width - drawWidth) / 2;
                 const yOffset = (canvas.height - drawHeight) / 2;
                 ctx.drawImage(img, xOffset, yOffset, drawWidth, drawHeight);
+                
+                // Overlay text with selected font style and size
+                const fontStyle = document.getElementById('fontStyle')?.value || 'Helvetica';
+                const fontSize = parseInt(document.getElementById('fontSize')?.value) || 20;
                 ctx.fillStyle = '#000000';
-                const fontSize = Math.min(copyrightHeight * 20, 50);
-                ctx.font = `${fontSize}px Helvetica`;
+                const scaledFontSize = fontSize * 20;
+                ctx.font = `${scaledFontSize}px ${fontStyle}`;
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 const text = textInput.value || 'Your Text Here';
