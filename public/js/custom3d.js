@@ -3,6 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { mergeBufferGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 
 // Check for gsap (loaded via HTML script tags)
 if (typeof gsap === 'undefined') {
@@ -13,6 +14,8 @@ const container = document.querySelector('.container3d');
 const boxCanvas = document.querySelector('#box-canvas');
 let textMesh = null; // Variable to store the text mesh
 let uploadInput = null; // Initialize uploadInput globally as null
+let faceMeshes = {}; // Store meshes for each face
+let selectedFaceMesh = null;
 
 let box = {
     params: {
@@ -209,48 +212,73 @@ function createCopyright() {
         return;
     }
 
-    const maxBreadth = box.params.breadth;
-    const maxHeight = box.params.height;
-    const copyrightBreadth = Math.min(box.params.breadth * 0.8, maxBreadth * 0.9);
-    const copyrightHeight = Math.min(box.params.height * 0.5, maxHeight * 0.9);
-    box.params.copyrightSize = [copyrightBreadth, copyrightHeight];
+    // Function to create or update a mesh for a specific face
+    function createFaceMesh(face) {
+        let width, height, targetMesh;
+        switch (face) {
+            case 'front':
+            case 'back':
+                width = box.params.length;
+                height = box.params.height;
+                targetMesh = face === 'front' ? box.els.frontHalf.length.side : box.els.backHalf.length.side;
+                break;
+            case 'left':
+            case 'right':
+                width = box.params.breadth;
+                height = box.params.height;
+                targetMesh = face === 'left' ? box.els.frontHalf.breadth.side : box.els.backHalf.breadth.side;
+                break;
+            case 'top':
+            case 'bottom':
+                width = box.params.length;
+                height = box.params.breadth;
+                targetMesh = face === 'top' ? box.els.frontHalf.length.top : box.els.frontHalf.length.bottom; // Approximation
+                break;
+            default:
+                return;
+        }
 
-    const canvas = document.createElement('canvas');
-    canvas.width = copyrightBreadth * 20;
-    canvas.height = copyrightHeight * 20;
-    const planeGeometry = new THREE.PlaneGeometry(copyrightBreadth, copyrightHeight);
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {
-        console.error('Failed to get 2D context for canvas.');
-        return;
+        // If mesh already exists, update it; otherwise, create new
+        if (!faceMeshes[face]) {
+            const canvas = document.createElement('canvas');
+            canvas.width = width * 20; // High resolution
+            canvas.height = height * 20;
+            const ctx = canvas.getContext('2d');
+            const texture = new THREE.CanvasTexture(canvas);
+            const geometry = new THREE.PlaneGeometry(width, height);
+            const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, opacity: 1 });
+            faceMeshes[face] = new THREE.Mesh(geometry, material);
+            scene.add(faceMeshes[face]);
+        }
+
+        // Position and rotate mesh based on target face
+        const mesh = faceMeshes[face];
+        mesh.position.copy(targetMesh.position);
+        mesh.rotation.copy(targetMesh.rotation);
+        if (face === 'front') mesh.position.z += box.params.thickness / 2 + 0.1;
+        if (face === 'back') mesh.position.z -= box.params.thickness / 2 + 0.1;
+        if (face === 'left') mesh.position.x -= box.params.thickness / 2 + 0.1;
+        if (face === 'right') mesh.position.x += box.params.thickness / 2 + 0.1;
+        if (face === 'top') mesh.position.y += box.params.height / 2 + 0.1;
+        if (face === 'bottom') mesh.position.y -= box.params.height / 2 + 0.1;
+
+        return mesh;
     }
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    const texture = new THREE.CanvasTexture(canvas);
-    copyright = new THREE.Mesh(planeGeometry, new THREE.MeshBasicMaterial({ map: texture, transparent: true, opacity: 1 }));
-    scene.add(copyright);
-
-    // Position the copyright mesh on the front face
-    const frontLengthSide = box.els.frontHalf.length.side;
-    copyright.position.copy(frontLengthSide.position);
-    copyright.position.x += box.params.length / 2 - (copyright.geometry.parameters.width / 2);
-    copyright.position.y = 0;
-    copyright.position.z = frontLengthSide.position.z + (box.params.thickness / 2) + 0.1;
-    copyright.rotation.copy(frontLengthSide.rotation);
-
-    // Attach TransformControls to the copyright mesh
-    transformControls.attach(copyright);
-
-    // Function to update the canvas with text and/or image
-    function updateCanvasText(text, fontStyle, fontSize, image = null) {
+    // Function to update canvas with text and/or image
+    function updateFaceCanvas(face, text, fontStyle, fontSize, image = null) {
+        const mesh = createFaceMesh(face);
+        if (!mesh) return;
+        const canvas = mesh.material.map.image;
+        const ctx = canvas.getContext('2d');
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // If an image is provided, draw it first
         if (image) {
             const aspectRatio = image.width / image.height;
+            const canvasAspect = canvas.width / canvas.height;
             let drawWidth = canvas.width;
             let drawHeight = canvas.height;
-            if (drawWidth / drawHeight > aspectRatio) {
+            if (canvasAspect > aspectRatio) {
                 drawWidth = drawHeight * aspectRatio;
             } else {
                 drawHeight = drawWidth / aspectRatio;
@@ -260,33 +288,33 @@ function createCopyright() {
             ctx.drawImage(image, xOffset, yOffset, drawWidth, drawHeight);
         }
 
-        // Draw the text on top
         ctx.fillStyle = '#000000';
         const scaledFontSize = fontSize * 20;
         ctx.font = `${scaledFontSize}px ${fontStyle}`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(text, canvas.width / 2, canvas.height / 2);
-        texture.needsUpdate = true;
+        mesh.material.map.needsUpdate = true;
+
+        // Attach TransformControls to the selected face mesh
+        transformControls.detach();
+        transformControls.attach(mesh);
+        selectedFaceMesh = mesh;
     }
 
-    // Initial text update
+    // Initial setup for front face (optional)
     const initialFontStyle = document.getElementById('fontStyle')?.value || 'Helvetica';
     const initialFontSize = parseInt(document.getElementById('fontSize')?.value) || 20;
-    updateCanvasText(textInput.value || 'Your Text Here', initialFontStyle, initialFontSize);
+    updateFaceCanvas('front', textInput.value || 'Your Text Here', initialFontStyle, initialFontSize);
 
-    // Expose update function globally
-    window.updateCopyrightText = function(text, fontStyle, fontSize) {
-        updateCanvasText(text, fontStyle, fontSize);
-    };
-
+    // Text input listener
     textInput.addEventListener('input', () => {
         const fontStyle = document.getElementById('fontStyle')?.value || 'Helvetica';
         const fontSize = parseInt(document.getElementById('fontSize')?.value) || 20;
-        updateCanvasText(textInput.value || 'Your Text Here', fontStyle, fontSize);
+        updateFaceCanvas(selectedFace || 'front', textInput.value || 'Your Text Here', fontStyle, fontSize);
     });
 
-    // Initialize uploadInput
+    // File upload
     uploadInput = document.createElement('input');
     uploadInput.type = 'file';
     uploadInput.accept = 'image/*';
@@ -294,18 +322,13 @@ function createCopyright() {
     document.body.appendChild(uploadInput);
 
     const uploadBtn = document.getElementById('upload-btn');
-    if (!uploadBtn) {
-        console.error('Upload button with ID "upload-btn" not found in the DOM.');
-    } else {
+    if (uploadBtn) {
         uploadBtn.addEventListener('click', () => uploadInput.click());
     }
 
     uploadInput.addEventListener('change', (event) => {
         const file = event.target.files[0];
-        if (!file) {
-            console.warn('No file selected for upload.');
-            return;
-        }
+        if (!file) return;
 
         const reader = new FileReader();
         reader.onload = (e) => {
@@ -314,14 +337,13 @@ function createCopyright() {
                 const fontStyle = document.getElementById('fontStyle')?.value || 'Helvetica';
                 const fontSize = parseInt(document.getElementById('fontSize')?.value) || 20;
                 const text = textInput.value || 'Your Text Here';
-                updateCanvasText(text, fontStyle, fontSize, img);
+                updateFaceCanvas(selectedFace || 'front', text, fontStyle, fontSize, img);
             };
             img.src = e.target.result;
         };
         reader.readAsDataURL(file);
     });
 
-    // Add transformation mode buttons
     createTransformControlsUI();
 }
 
@@ -434,6 +456,27 @@ function updatePanelsTransform() {
     box.els.backHalf.breadth.bottom.rotation.x = -box.animated.flapAngles.backHalf.breadth.bottom;
     box.els.backHalf.length.bottom.rotation.x = -box.animated.flapAngles.backHalf.length.bottom;
 
+    for (const face in faceMeshes) {
+        const mesh = faceMeshes[face];
+        let targetMesh;
+        switch (face) {
+            case 'front': targetMesh = box.els.frontHalf.length.side; break;
+            case 'back': targetMesh = box.els.backHalf.length.side; break;
+            case 'left': targetMesh = box.els.frontHalf.breadth.side; break;
+            case 'right': targetMesh = box.els.backHalf.breadth.side; break;
+            case 'top': targetMesh = box.els.frontHalf.length.top; break;
+            case 'bottom': targetMesh = box.els.frontHalf.length.bottom; break;
+        }
+        mesh.position.copy(targetMesh.position);
+        mesh.rotation.copy(targetMesh.rotation);
+        if (face === 'front') mesh.position.z += box.params.thickness /0.1;
+        if (face === 'back') mesh.position.z -= box.params.thickness / 0.1;
+        if (face === 'left') mesh.position.x -= box.params.thickness / 0.1;
+        if (face === 'right') mesh.position.x += box.params.thickness / 0.1;
+        if (face === 'top') mesh.position.y += box.params.height / 0.1;
+        if (face === 'bottom') mesh.position.y -= box.params.height / 0.1;
+    }
+
     // Update copyright position
     if (copyright) {
         const frontLengthSide = box.els.frontHalf.length.side;
@@ -479,16 +522,18 @@ function createControls() {
 
     function updateGUIStyles() {
         const screenWidth = window.innerWidth;
+        const modalWidth = modalBody.getBoundingClientRect().width; // Get the width of .modal-panel-left
         gui.domElement.style.position = 'absolute';
-        gui.domElement.style.top = '15px';
+        gui.domElement.style.top = '10px';
         gui.domElement.style.left = '8px';
+        gui.domElement.style.right = '18px';
         gui.domElement.style.zIndex = '1000';
-        gui.domElement.style.width = screenWidth < 768 ? '80%' : '250px';
+        gui.domElement.style.width = screenWidth < 768 ? '80%' : `${modalWidth}px`;
         if (screenWidth < 576) {
             gui.domElement.style.left = '50%';
             gui.domElement.style.transform = 'translateX(-50%)';
         } else {
-            gui.domElement.style.left = 'auto';
+            gui.domElement.style.left = '8px';
             gui.domElement.style.transform = 'none';
         }
     }
@@ -521,12 +566,30 @@ function setupFaceViewControls() {
         });
     }
 
-    btnFront.addEventListener('click', () => { selectedFace = 'front'; moveCamera({ x: -80, y: 60, z: distance }, box.position); });
-    btnBack.addEventListener('click', () => { selectedFace = 'back'; moveCamera({ x: 0, y: 0, z: -distance }, box.position); });
-    btnLeft.addEventListener('click', () => { selectedFace = 'left'; moveCamera({ x: -distance, y: 0, z: 0 }, box.position); });
-    btnRight.addEventListener('click', () => { selectedFace = 'right'; moveCamera({ x: distance, y: 0, z: 0 }, box.position); });
-    btnTop.addEventListener('click', () => { selectedFace = 'top'; moveCamera({ x: 0, y: distance, z: 0 }, box.position); });
-    btnBottom.addEventListener('click', () => { selectedFace = 'bottom'; moveCamera({ x: 0, y: -distance, z: 0 }, box.position); });
+    btnFront.addEventListener('click', () => {
+        selectedFace = 'front';
+        moveCamera({ x: -80, y: 60, z: distance }, box.els.group.position);
+    });
+    btnBack.addEventListener('click', () => {
+        selectedFace = 'back';
+        moveCamera({ x: 0, y: 0, z: -distance }, box.els.group.position);
+    });
+    btnLeft.addEventListener('click', () => {
+        selectedFace = 'left';
+        moveCamera({ x: -distance, y: 0, z: 0 }, box.els.group.position);
+    });
+    btnRight.addEventListener('click', () => {
+        selectedFace = 'right';
+        moveCamera({ x: distance, y: 0, z: 0 }, box.els.group.position);
+    });
+    btnTop.addEventListener('click', () => {
+        selectedFace = 'top';
+        moveCamera({ x: 0, y: distance, z: 0 }, box.els.group.position);
+    });
+    btnBottom.addEventListener('click', () => {
+        selectedFace = 'bottom';
+        moveCamera({ x: 0, y: -distance, z: 0 }, box.els.group.position);
+    });
 }
 
 // Save box configuration
@@ -545,119 +608,98 @@ function saveBoxConfiguration() {
     const faceNames = ['front', 'back', 'left', 'right', 'top', 'bottom'];
     faceNames.forEach(face => {
         boxData.faces[face] = { hasAttachment: false, attachment: null };
-    });
-
-    if (copyright) {
-        const textInput = document.querySelector('.text-input');
-        const fontStyle = document.getElementById('fontStyle')?.value || 'Helvetica';
-        const fontSize = document.getElementById('fontSize')?.value || '20px';
-
-        const hasUploadedImage = uploadInput && uploadInput.files && uploadInput.files.length > 0;
-
-        boxData.faces['front'].hasAttachment = true;
-        boxData.faces['front'].attachment = {
-            type: textInput.value && !hasUploadedImage ? 'text' : 'image',
-            content: textInput.value || (hasUploadedImage ? 'uploaded_image' : ''),
-            fontStyle: fontStyle,
-            fontSize: fontSize,
-            position: { x: copyright.position.x, y: copyright.position.y, z: copyright.position.z },
-            rotation: { x: copyright.rotation.x, y: copyright.rotation.y, z: copyright.rotation.z }
-        };
-    }
-
-    // Get CSRF token with a fallback
-    const csrfTokenElement = document.querySelector('meta[name="csrf-token"]');
-    const csrfToken = csrfTokenElement ? csrfTokenElement.content : null;
-
-    if (!csrfToken) {
-        console.warn('CSRF token not found in the DOM. Ensure <meta name="csrf-token"> is present in the HTML.');
-    }
-
-    fetch('/api/save-box-configuration', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            ...(csrfToken && { 'X-CSRF-TOKEN': csrfToken }) // Only add CSRF token if it exists
-        },
-        body: JSON.stringify(boxData)
-    })
-    .then(response => {
-        if (!response.ok) {
-            return response.text().then(text => {
-                throw new Error(`HTTP error! Status: ${response.status}, Body: ${text}`);
-            });
+        if (faceMeshes[face]) {
+            const mesh = faceMeshes[face];
+            boxData.faces[face].hasAttachment = true;
+            boxData.faces[face].attachment = {
+                type: mesh.material.map.image ? 'image' : 'text',
+                content: mesh.material.map.image ? 'uploaded_image' : (document.querySelector('.text-input').value || ''),
+                fontStyle: document.getElementById('fontStyle')?.value || 'Helvetica',
+                fontSize: document.getElementById('fontSize')?.value || '20px',
+                position: { x: mesh.position.x, y: mesh.position.y, z: mesh.position.z },
+                rotation: { x: mesh.rotation.x, y: mesh.rotation.y, z: mesh.rotation.z },
+                scale: { x: mesh.scale.x, y: mesh.scale.y, z: mesh.scale.z }
+            };
         }
-        return response.json();
-    })
-    .then(data => {
-        console.log('Box configuration saved:', data);
-        alert('Configuration saved successfully!');
-    })
-    .catch(error => {
-        console.error('Error saving configuration:', error);
-        alert('Failed to save configuration. Check the console for details.');
     });
+
+    // Export the 3D model as GLTF
+    const exporter = new GLTFExporter();
+    exporter.parse(
+        box.els.group, // Export the entire box group
+        function (gltf) {
+            // const output = JSON.stringify(gltf, null, 2); // GLTF as JSON
+            const modelBlob = new Blob([gltf], { type: 'model/gltf-binary' });
+            console.log('GLTF Blob size:', modelBlob.size); // Debug size
+            const uniqueId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+            // Capture a screenshot of the front face
+            camera.position.set(-80, 60, 170); // Front view
+            camera.lookAt(box.els.group.position);
+            camera.updateProjectionMatrix();
+            renderer.render(scene, camera);
+            const imageDataUrl = renderer.domElement.toDataURL('image/png');
+
+            // Prepare FormData for file upload
+            const formData = new FormData();
+            formData.append('boxData', JSON.stringify(boxData));
+            formData.append('model', modelBlob, `${uniqueId}.glb`);
+            formData.append('image', dataURLtoBlob(imageDataUrl), `${uniqueId}.png`);
+
+            // Debug FormData contents
+            for (let pair of formData.entries()) {
+                console.log(`${pair[0]}:`, pair[1]);
+            }
+            // Get CSRF token
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+            if (!csrfToken) {
+                console.warn('CSRF token not found.');
+            }
+
+            // Send to Laravel
+            fetch('/api/save-box-configuration', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'Accept': 'application/json',
+                    ...(csrfToken && { 'X-CSRF-TOKEN': csrfToken })
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    return response.text().then(text => {
+                        throw new Error(`HTTP error! Status: ${response.status}, Body: ${text}`);
+                    });
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log('Box configuration and model saved:', data);
+                alert('Configuration and 3D model saved successfully!');
+            })
+            .catch(error => {
+                console.error('Error saving configuration:', error);
+                alert('Failed to save. Check console for details.');
+            });
+        },
+        function (error) {
+            console.error('GLTF export failed:', error);
+        },
+        { binary: true, embedImages: true }
+    );
+}
+
+// Utility function to convert data URL to Blob
+function dataURLtoBlob(dataurl) {
+    const parts = dataurl.split(',');
+    const mime = parts[0].match(/:(.*?);/)[1];
+    const bstr = atob(parts[1]);
+    const n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    for (let i = 0; i < n; i++) {
+        u8arr[i] = bstr.charCodeAt(i);
+    }
+    return new Blob([u8arr], { type: mime });
 }
 
 document.querySelector('.add-to-cart').addEventListener('click', saveBoxConfiguration);
-
-
-
-
-
-
-
-
-// For Rotate button
-// let isRotating = false;
-// let rotationRequest; // Store the animation frame request
-
-// Event Listener for Rotate Button
-// document.getElementById('rotate-btn').addEventListener('click', () => {
-//     isRotating = !isRotating; // Toggle rotation state
-//     if (isRotating) {
-//         animateRotation(); // Start rotation
-//     } else {
-//         cancelAnimationFrame(rotationRequest); // Stop rotation when toggled off
-//     }
-// });
-
-// Function to Animate Rotation of the 3D Box
-// function animateRotation() {
-//     if (!isRotating) return; // Stop rotation if the state is false
-//     if (box && box.els && box.els.group) {
-//         box.els.group.rotation.y += 0.25 * 0.01;
-//         copyright.rotation.y = box.els.group.rotation.y;
-//     } else {
-//         console.warn('Box group not found in the scene.');
-//     }
-//     orbit.update();
-//     renderer.render(scene, camera);
-//     rotationRequest = requestAnimationFrame(animateRotation);
-// }
-
-// Event Listener for Reset Button
-// document.getElementById('reset-btn').addEventListener('click', () => {
-//     console.log("Reset button is pressed");
-//     if (ctx) {
-//         ctx.clearRect(0, 0, canvas.width, canvas.height);
-//         const textInput = document.querySelector('.text-input');
-//         if (textInput) {
-//             textInput.value = '';
-//         }
-//         copyright.material.map = new THREE.CanvasTexture(canvas); // Recreate texture
-//         updateCanvasText();
-//         updateCopyrightPosition();
-//     } else {
-//         console.error('Canvas context is not available.');
-//     }
-// });
-// // Helper function to update copyright position
-// function updateCopyrightPosition() {
-//     const frontLengthSide = box.els.frontHalf.length.side;
-//     copyright.position.copy(frontLengthSide.position);
-//     copyright.position.x += box.params.breadth / 2 - (copyright.geometry.parameters.width / 2);
-//     copyright.position.y = 0;
-//     copyright.position.z = frontLengthSide.position.z + (box.params.thickness / 2); // No extra offset
-//     copyright.rotation.copy(frontLengthSide.rotation);
-// }

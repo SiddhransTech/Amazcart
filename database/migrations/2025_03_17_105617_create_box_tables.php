@@ -6,16 +6,17 @@ use Illuminate\Support\Facades\Schema;
 
 class CreateBoxTables extends Migration
 {
-    public function up()
-    {
+    public function up() {
         Schema::create('box_configurations', function (Blueprint $table) {
             $table->id();
-            $table->decimal('breadth', 5, 2);
-            $table->decimal('length', 5, 2);
-            $table->decimal('height', 5, 2);
-            $table->decimal('thickness', 5, 2);
+            $table->float('breadth');
+            $table->float('length');
+            $table->float('height');
+            $table->float('thickness');
             $table->integer('flute_freq');
-            $table->timestamps(); // Already correct
+            $table->string('model_path')->nullable(); // Add this
+            $table->string('image_path')->nullable(); // Add this
+            $table->timestamps();
         });
 
         Schema::create('box_faces', function (Blueprint $table) {
@@ -29,17 +30,20 @@ class CreateBoxTables extends Migration
         Schema::create('attachments', function (Blueprint $table) {
             $table->id();
             $table->foreignId('box_face_id')->constrained()->onDelete('cascade');
-            $table->enum('type', ['text', 'image'])->nullable(); // Made nullable to match controller
-            $table->text('content')->nullable(); // Made nullable to match controller
-            $table->string('font_style', 50)->nullable();
-            $table->string('font_size', 10)->nullable();
-            $table->decimal('position_x', 5, 2)->default(0); // Added default
-            $table->decimal('position_y', 5, 2)->default(0); // Added default
-            $table->decimal('position_z', 5, 2)->default(0); // Added default
-            $table->decimal('rotation_x', 5, 2)->default(0); // Added default
-            $table->decimal('rotation_y', 5, 2)->default(0); // Added default
-            $table->decimal('rotation_z', 5, 2)->default(0); // Added default
-            $table->timestamps(); // Added timestamps
+            $table->string('type')->nullable();
+            $table->string('content')->nullable();
+            $table->string('font_style')->nullable();
+            $table->string('font_size')->nullable();
+            $table->float('position_x')->default(0);
+            $table->float('position_y')->default(0);
+            $table->float('position_z')->default(0);
+            $table->float('rotation_x')->default(0);
+            $table->float('rotation_y')->default(0);
+            $table->float('rotation_z')->default(0);
+            $table->float('scale_x')->default(1); // Add this
+            $table->float('scale_y')->default(1); // Add this
+            $table->float('scale_z')->default(1); // Add this
+            $table->timestamps();
         });
     }
 

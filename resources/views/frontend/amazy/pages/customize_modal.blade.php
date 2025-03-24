@@ -199,7 +199,7 @@
                 fontStyleSelect.appendChild(option);
             });
 
-            for (let size = 2; size <= 45; size++) {
+            for (let size = 2; size <= 50; size++) {
                 const option = document.createElement("option");
                 option.value = `${size}px`;
                 option.textContent = `${size}px`;
