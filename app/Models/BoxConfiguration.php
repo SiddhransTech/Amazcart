@@ -1,5 +1,6 @@
 <?php
 
+// Currently not using this Model
 
 namespace App\Models;
 

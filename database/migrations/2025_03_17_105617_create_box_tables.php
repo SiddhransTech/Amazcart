@@ -4,6 +4,8 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
+// Currently not using this Database Table
+
 class CreateBoxTables extends Migration
 {
     public function up() {
