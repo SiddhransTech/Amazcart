@@ -174,4 +174,14 @@ Route::prefix('version2')->group(function () {
 
 Route::get('marketing/new-user-zones', [NewUserZoneController::class, 'getAll']);
 
-Route::post('/save-box-configuration', [BoxConfigurationController::class, 'save']);
+// Route::post('/save-box-configuration', [BoxConfigurationController::class, 'save']);
+Route::post('/box-designs/save-box-configuration', [BoxConfigurationController::class, 'save'])
+    ->middleware(['api', 'auth:sanctum']); // Adjust middleware as needed
+
+// Route::prefix('box-designs')->group(function () {
+//     Route::post('/save-box-configuration', [BoxConfigurationController::class, 'save']);
+//     Route::get('/index-box-configuration', [BoxConfigurationController::class, 'index']);
+//     Route::get('show-box-configuration/{id}', [BoxConfigurationController::class, 'show']);
+//     Route::put('update-box-configuration/{id}', [BoxConfigurationController::class, 'update']);
+//     Route::delete('destroy-box-configuration/{id}', [BoxConfigurationController::class, 'destroy']);
+// });

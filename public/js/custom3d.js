@@ -690,102 +690,198 @@ function setupFaceViewControls() {
 }
 
 // Save box configuration
-function saveBoxConfiguration() {
-    const boxData = {
-        parameters: {
-            breadth: box.params.breadth,
-            length: box.params.length,
-            height: box.params.height,
-            thickness: box.params.thickness,
-            fluteFreq: box.params.fluteFreq
-        },
-        faces: {}
-    };
+async function saveBoxConfiguration() {
+    try {
+        // Show loading state
+        const saveBtn = document.querySelector('.add-to-cart');
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Saving...';
 
-    const faceNames = ['front', 'back', 'left', 'right', 'top', 'bottom'];
-    faceNames.forEach(face => {
-        boxData.faces[face] = { hasAttachment: false, attachment: null };
-        if (faceMeshes[face]) {
-            const mesh = faceMeshes[face];
-            boxData.faces[face].hasAttachment = true;
-            boxData.faces[face].attachment = {
-                type: mesh.material.map.image ? 'image' : 'text',
-                content: mesh.material.map.image ? 'uploaded_image' : (document.querySelector('.text-input').value || ''),
-                fontStyle: document.getElementById('fontStyle')?.value || 'Helvetica',
-                fontSize: document.getElementById('fontSize')?.value || '20px',
-                position: { x: mesh.position.x, y: mesh.position.y, z: mesh.position.z },
-                rotation: { x: mesh.rotation.x, y: mesh.rotation.y, z: mesh.rotation.z },
-                scale: { x: mesh.scale.x, y: mesh.scale.y, z: mesh.scale.z }
-            };
+        // 1. Prepare box data
+        const boxData = {
+            parameters: {
+                breadth: box.params.breadth,
+                length: box.params.length,
+                height: box.params.height,
+                thickness: box.params.thickness,
+                fluteFreq: box.params.fluteFreq
+            },
+            faces: {}
+        };
+
+        // ... (your existing face data collection code)
+        const faceNames = ['front', 'back', 'left', 'right', 'top', 'bottom'];
+        faceNames.forEach(face => {
+            boxData.faces[face] = { hasAttachment: false, attachment: null };
+            if (faceMeshes[face]) {
+                const mesh = faceMeshes[face];
+                boxData.faces[face].hasAttachment = true;
+                boxData.faces[face].attachment = {
+                    type: mesh.material.map.image ? 'image' : 'text',
+                    content: mesh.material.map.image ? 'uploaded_image' : (document.querySelector('.text-input').value || ''),
+                    fontStyle: document.getElementById('fontStyle')?.value || 'Helvetica',
+                    fontSize: document.getElementById('fontSize')?.value || '20px',
+                    position: { x: mesh.position.x, y: mesh.position.y, z: mesh.position.z },
+                    rotation: { x: mesh.rotation.x, y: mesh.rotation.y, z: mesh.rotation.z },
+                    scale: { x: mesh.scale.x, y: mesh.scale.y, z: mesh.scale.z }
+                };
+            }
+        });
+
+        // 2. Export 3D model
+        const exporter = new GLTFExporter();
+        const gltf = await new Promise((resolve, reject) => {
+            exporter.parse(
+                box.els.group,
+                resolve,
+                reject,
+                { binary: true, embedImages: true }
+            );
+        });
+
+        const modelBlob = new Blob([gltf], { type: 'model/gltf-binary' });
+        const uniqueId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+        // 3. Capture screenshot
+        camera.position.set(-80, 60, 170);
+        camera.lookAt(box.els.group.position);
+        camera.updateProjectionMatrix();
+        renderer.render(scene, camera);
+        const imageDataUrl = renderer.domElement.toDataURL('image/png');
+
+        // 4. Prepare FormData
+        const formData = new FormData();
+        formData.append('boxData', JSON.stringify(boxData));
+        formData.append('model', modelBlob, `${uniqueId}.glb`);
+        formData.append('image', dataURLtoBlob(imageDataUrl), `${uniqueId}.png`);
+        formData.append('price', calculateBoxPrice(boxData));
+        formData.append('seller_id', getCurrentSellerId());
+
+        // 5. Get CSRF token
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+        
+        // 6. First save the box design
+        // API endpoint - use absolute URL
+        const apiUrl = `${window.location.origin}/api/box-designs/save-box-configuration`;
+
+        // Make the request with error handling
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'Accept': 'application/json',
+                // ...(csrfToken && { 'X-CSRF-TOKEN': csrfToken })
+                'X-CSRF-TOKEN': csrfToken
+            },
+            credentials: 'include' // Important for sessions/cookies
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Server responded with ${response.status}: ${errorText}`);
         }
-    });
 
-    // Export the 3D model as GLTF
-    const exporter = new GLTFExporter();
-    exporter.parse(
-        box.els.group, // Export the entire box group
-        function (gltf) {
-            // const output = JSON.stringify(gltf, null, 2); // GLTF as JSON
-            const modelBlob = new Blob([gltf], { type: 'model/gltf-binary' });
-            console.log('GLTF Blob size:', modelBlob.size); // Debug size
-            const uniqueId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        // const boxDesignData = await saveResponse.json();
+        const result = await response.json();
+        console.log('Success:', result);
+        alert('Box design saved successfully!');
+        
+        // 7. Then add to cart
+        // Proceed to add to cart
+        await addBoxDesignToCart(result.data.id, result.data.price, result.data.seller_id);
 
-            // Capture a screenshot of the front face
-            camera.position.set(-80, 60, 170); // Front view
-            camera.lookAt(box.els.group.position);
-            camera.updateProjectionMatrix();
-            renderer.render(scene, camera);
-            const imageDataUrl = renderer.domElement.toDataURL('image/png');
-
-            // Prepare FormData for file upload
-            const formData = new FormData();
-            formData.append('boxData', JSON.stringify(boxData));
-            formData.append('model', modelBlob, `${uniqueId}.glb`);
-            formData.append('image', dataURLtoBlob(imageDataUrl), `${uniqueId}.png`);
-
-            // Debug FormData contents
-            for (let pair of formData.entries()) {
-                console.log(`${pair[0]}:`, pair[1]);
-            }
-            // Get CSRF token
-            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
-            if (!csrfToken) {
-                console.warn('CSRF token not found.');
-            }
-
-            // Send to Laravel
-            fetch('/api/save-box-configuration', {
-                method: 'POST',
-                body: formData,
-                headers: {
-                    'Accept': 'application/json',
-                    ...(csrfToken && { 'X-CSRF-TOKEN': csrfToken })
-                }
-            })
-            .then(response => {
-                if (!response.ok) {
-                    return response.text().then(text => {
-                        throw new Error(`HTTP error! Status: ${response.status}, Body: ${text}`);
-                    });
-                }
-                return response.json();
-            })
-            .then(data => {
-                console.log('Box configuration and model saved:', data);
-                alert('Configuration and 3D model saved successfully!');
-            })
-            .catch(error => {
-                console.error('Error saving configuration:', error);
-                alert('Failed to save. Check console for details.');
-            });
-        },
-        function (error) {
-            console.error('GLTF export failed:', error);
-        },
-        { binary: true, embedImages: true }
-    );
+    } catch (error) {
+        console.error('Error saving configuration:', error);
+        alert(`Failed to save: ${error.message}`);
+    }
 }
 
+async function addBoxDesignToCart(boxDesignId, price, sellerId) {
+    try {
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+        const response = await fetch('/cart/store', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': csrfToken
+            },
+            body: JSON.stringify({
+                product_id: boxDesignId,
+                product_type: 'box_design',
+                qty: 1,
+                price: price,
+                seller_id: sellerId
+            })
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'Failed to add to cart');
+        }        
+        console.log('Added to cart:', result);
+        updateCartUI(result.count_bottom);
+        showToast('Box design added to cart!');
+        
+        return result;
+        
+    } catch (error) {
+        console.error('Cart error:', error);
+        alert('Design saved but failed to add to cart');
+        showToast(error.message);
+        throw error; // Re-throw for handling in saveBoxConfiguration
+    }
+}
+// Helper function to calculate box price (implement based on your pricing logic)
+function calculateBoxPrice(boxData) {
+    // Example: calculate based on dimensions and materials
+    const basePrice = 10.00;
+    const sizeFactor = boxData.parameters.length * boxData.parameters.breadth * boxData.parameters.height;
+    return basePrice + (sizeFactor * 0.01);
+}
+
+// Helper function to get seller ID (implement based on your logic)
+function getCurrentSellerId() {
+    // This could come from a hidden field, user data, or be fixed
+    return document.querySelector('meta[name="seller-id"]')?.content || 1;
+}
+
+// Helper functions
+// Add this function to your custom3d.js file
+function updateCartUI(cartCount) {
+    // Update the cart counter in the navbar
+    const cartCounter = document.querySelector('.cart-count');
+    if (cartCounter) {
+        cartCounter.textContent = cartCount;
+    }
+    
+    // If you have a cart preview, update it here
+    const cartPreview = document.querySelector('.cart-preview');
+    if (cartPreview) {
+        // You might want to fetch and update the cart contents here
+        // Example: fetchCartContents().then(updateCartPreview);
+    }
+    
+    // Optional: Show a success notification
+    showToast('Item added to cart!');
+}
+
+
+// Helper function for notifications
+function showToast(message) {
+    // Use your preferred notification system
+    // Example with a simple alert:
+    alert(message);
+    
+    // Or with a toast library:
+    // Toastify({ text: message }).showToast();
+}
+
+function showErrorAlert(message) {
+    alert(`Error: ${message}`);
+}
 // Utility function to convert data URL to Blob
 function dataURLtoBlob(dataurl) {
     const parts = dataurl.split(',');

@@ -75,6 +75,9 @@ class CartsResource extends JsonResource
             'seller' => $saller,
             'customer' => $customer,
             'gift_card' => $giftCard,
+            'box_design' => $this->when($this->product_type == 'box_design', function() {
+                return new BoxDesignResource($this->boxDesign);
+            }),
             'product' => new CartProductListResource($product),
         ];
     }

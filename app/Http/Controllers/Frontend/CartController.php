@@ -9,6 +9,7 @@ use Exception;
 use Modules\GiftCard\Entities\GiftCard;
 use Modules\Seller\Entities\SellerProductSKU;
 use Modules\UserActivityLog\Traits\LogActivity;
+use App\Http\Resources\CartsResource;
 
 class CartController extends Controller
 {
@@ -37,12 +38,15 @@ class CartController extends Controller
                                 $e_productName = $e_product->product->product_name;
                                 $e_sku = !empty($e_product->sku) ? $e_product->sku->sku:'';
                             }
-                        }else{
+                        }elseif($c['product_type'] == 'gift_card'){
                             $e_product = GiftCard::find($c['product_id']);
                             if($e_product){
                                 $e_productName = $e_product->name;
                                 $e_sku = $e_product->sku;
                             }
+                        }elseif($c['product_type'] == 'box_design'){
+                            $e_productName = 'Custom Box Design';
+                            $e_sku = 'BOX-'.$c['product_id'];
                         }
                         $e_items[]=[
                             "item_id"=> $e_sku,
@@ -74,45 +78,178 @@ class CartController extends Controller
             return $e;
         }
     }
-    public function store(Request $request){
-        try{
-            $result = $this->cartService->store($request->except('_token'));
-            if($result == 'out_of_stock'){
-                return 'out_of_stock';
-            }else{
-                $carts = collect();
-                if(auth()->check()){
-                    $carts = \App\Models\Cart::with('product.product.product','giftCard','product.product_variations.attribute', 'product.product_variations.attribute_value.color')->where('user_id',auth()->user()->id)->where('product_type', 'product')->whereHas('product',function($query){
-                        return $query->where('status', 1)->whereHas('product', function($q){
-                            return $q->activeSeller();
-                        });
-                    })->orWhere('product_type', 'gift_card')->where('user_id',auth()->user()->id)->whereHas('giftCard', function($query){
-                        return $query->where('status', 1);
-                    })->get();
+    // public function store(Request $request){
+    //     try{
+    //         $result = $this->cartService->store($request->except('_token'));
+    //         if($result == 'out_of_stock'){
+    //             return 'out_of_stock';
+    //         }else{
+    //             $carts = collect();
+    //             if(auth()->check()){
+    //                 $carts = \App\Models\Cart::with([
+    //                     'product.product.product',
+    //                     'giftCard',
+    //                     'boxDesign', // Add this
+    //                     'product.product_variations.attribute', 
+    //                     'product.product_variations.attribute_value.color'
+    //                 ])->where('user_id',auth()->user()->id)
+    //                 ->where(function($query) {
+    //                     $query->where('product_type', 'product')
+    //                         ->whereHas('product',function($q){
+    //                             return $q->where('status', 1)->whereHas('product', function($q){
+    //                                 return $q->activeSeller();
+    //                             });
+    //                         })
+    //                         ->orWhere('product_type', 'gift_card')
+    //                         ->whereHas('giftCard', function($q){
+    //                             return $q->where('status', 1);
+    //                         })
+    //                         ->orWhere('product_type', 'box_design')
+    //                         ->whereHas('boxDesign');
+    //                 })->get();
+                    
+    //             }else {
+    //                 $carts = \App\Models\Cart::with('product.product.product','giftCard','product.product_variations.attribute', 'product.product_variations.attribute_value.color')->where('session_id',session()->getId())->where('product_type', 'product')->whereHas('product',function($query){
+    //                     return $query->where('status', 1)->whereHas('product', function($q){
+    //                         return $q->activeSeller();
+    //                     });
+    //                 })->orWhere('product_type', 'gift_card')->where('session_id', session()->getId())->whereHas('giftCard', function($query){
+    //                     return $query->where('status', 1);
+    //                 })->get();
+    //             }
+    //             $items = 0;
+    //             foreach($carts as $cart){
+    //                 $items += $cart->qty;
+    //             }
+    //             LogActivity::successLog('cart store successful.');
+    //             return response()->json([
+    //                 'cart_details_submenu' => (string) view(theme('partials._cart_details_submenu'),compact('carts','items')),
+    //                 'count_bottom' => $items
+    //             ]);
+    //         }
+    //     }catch(\Exception $e){
 
-                }else {
-                    $carts = \App\Models\Cart::with('product.product.product','giftCard','product.product_variations.attribute', 'product.product_variations.attribute_value.color')->where('session_id',session()->getId())->where('product_type', 'product')->whereHas('product',function($query){
-                        return $query->where('status', 1)->whereHas('product', function($q){
-                            return $q->activeSeller();
-                        });
-                    })->orWhere('product_type', 'gift_card')->where('session_id', session()->getId())->whereHas('giftCard', function($query){
-                        return $query->where('status', 1);
-                    })->get();
+    //     }
+    // }
+    public function store(Request $request)
+    {
+        try {
+            $request->validate([
+                'product_id' => 'required',
+                'product_type' => 'required|in:product,gift_card,box_design',
+                'qty' => 'required|numeric|min:1',
+                'price' => 'required|numeric|min:0',
+                'seller_id' => 'required|exists:users,id'
+            ]);
+
+            // Skip stock check for box designs
+            if ($request->product_type !== 'box_design') {
+                $result = $this->cartService->store($request->except('_token'));
+                if ($result == 'out_of_stock') {
+                    return response()->json(['error' => 'Out of stock'], 400);
                 }
-                $items = 0;
-                foreach($carts as $cart){
-                    $items += $cart->qty;
-                }
-                LogActivity::successLog('cart store successful.');
-                return response()->json([
-                    'cart_details_submenu' => (string) view(theme('partials._cart_details_submenu'),compact('carts','items')),
-                    'count_bottom' => $items
-                ]);
             }
-        }catch(\Exception $e){
 
+            $customer = auth()->user();
+            if (!$customer) {
+                return response()->json(['error' => 'Unauthenticated'], 401);
+            }
+            $total_price = $request->price * $request->qty;
+            
+            // Update or create cart item
+            $cartItem = \App\Models\Cart::updateOrCreate(
+                [
+                    'user_id' => $customer ? $customer->id : null,
+                    // 'session_id' => $customer ? null : session()->getId(),
+                    'product_id' => $request->product_id,
+                    'product_type' => $request->product_type
+                ],
+                [
+                    'qty' => $request->qty,
+                    'price' => $request->price,
+                    'total_price' => $request->price * $request->qty,
+                    'seller_id' => $request->seller_id,
+                    'shipping_method_id' => 0,
+                    'sku' => null,
+                    'is_select' => 1
+                ]
+            );
+
+            // Get cart data with proper relationships
+            $carts = collect();
+            if(auth()->check()){
+                $carts = \App\Models\Cart::with([
+                    'product.product.product',
+                    'giftCard',
+                    'boxDesign',
+                    'product.product_variations.attribute', 
+                    'product.product_variations.attribute_value.color'
+                ])->where('user_id', auth()->user()->id)
+                ->where(function($query) {
+                    $query->where('product_type', 'product')
+                        ->whereHas('product', function($q){
+                            return $q->where('status', 1)->whereHas('product', function($q){
+                                return $q->activeSeller();
+                            });
+                        })
+                        ->orWhere('product_type', 'gift_card')
+                        ->whereHas('giftCard', function($q){
+                            return $q->where('status', 1);
+                        })
+                        ->orWhere('product_type', 'box_design')
+                        ->whereHas('boxDesign');
+                })->get();
+            } else {
+                $carts = \App\Models\Cart::with([
+                    'product.product.product',
+                    'giftCard',
+                    'boxDesign',
+                    'product.product_variations.attribute', 
+                    'product.product_variations.attribute_value.color'
+                ])->where('session_id', session()->getId())
+                ->where(function($query) {
+                    $query->where('product_type', 'product')
+                        ->whereHas('product', function($q){
+                            return $q->where('status', 1)->whereHas('product', function($q){
+                                return $q->activeSeller();
+                            });
+                        })
+                        ->orWhere('product_type', 'gift_card')
+                        ->whereHas('giftCard', function($q){
+                            return $q->where('status', 1);
+                        })
+                        ->orWhere('product_type', 'box_design')
+                        ->whereHas('boxDesign');
+                })->get();
+            }
+
+            $items = 0;
+            foreach($carts as $cart){
+                $items += $cart->qty;
+            }
+
+            LogActivity::successLog('cart store successful.');
+            
+            $cartCount =  \App\Models\Cart::where('user_id', $customer->id)->count();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Added to cart',
+                'count_bottom' => $cartCount,
+                'cart_item' => new CartsResource($cartItem)
+            ]);
+
+        } catch (\Exception $e) {
+            LogActivity::errorLog($e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to add to cart',
+                'error' => $e->getMessage()
+            ], 500);
         }
     }
+
+
     public function update(Request $request){
         $this->cartService->update($request->except('_token'));
         return $this->reloadWithData();

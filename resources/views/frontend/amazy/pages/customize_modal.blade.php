@@ -131,8 +131,26 @@
                             <div class="pricing">
                                 <span class="quantity">3000</span>
                                 <span class="price">₹12.44</span>
-                                <button class="add-to-cart">ADD TO CART</button>
+                                <button 
+                                    class="add-to-cart amaz_primary_btn style2"
+                                    @if($product->stock_manage == 1 && $product->skus->where('status',1)->first()->product_stock < $product->product->minimum_order_qty)
+                                        disabled
+                                    @endif
+                                    data-id="{{ $product->id }}"
+                                    data-type="product"
+                                >
+                                    @if($product->stock_manage == 1 && $product->skus->where('status',1)->first()->product_stock < $product->product->minimum_order_qty)
+                                        {{ __('defaultTheme.out_of_stock') }}
+                                    @else
+                                        {{ __('common.add_to_cart') }}
+                                    @endif
+                                </button>
                             </div>
+                            <!-- In your navbar or header -->
+                            <a href="/cart" class="cart-link">
+                                <i class="fas fa-shopping-cart"></i>
+                                <span class="cart-count">0</span>
+                            </a>
                         </div>
                     </div>
                 </div>

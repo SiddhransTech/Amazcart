@@ -20,6 +20,10 @@ class Cart extends Model
     {
         return $this->belongsTo(SellerProductSKU::class,'product_id','id');
     }
+    public function boxDesign()
+    {
+        return $this->belongsTo(BoxDesign::class, 'product_id', 'id');
+    }
     public function shippingMethod()
     {
         return $this->belongsTo(ShippingMethod::class,'shipping_method_id','id');

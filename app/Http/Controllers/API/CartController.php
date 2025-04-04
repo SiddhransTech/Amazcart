@@ -78,17 +78,25 @@ class CartController extends Controller
 
 
 
-    public function list(Request $request){
+     public function list(Request $request){
+        $cart_ids = Cart::where('user_id',$request->user()->id)
+            ->where(function($query) {
+                $query->where('product_type', 'product')
+                    ->whereHas('product', function($q){
+                        return $q->where('status', 1)->whereHas('product', function($q){
+                            return $q->where('status', 1)->activeSeller();
+                        });
+                    })
+                    ->orWhere('product_type', 'gift_card')
+                    ->whereHas('giftCard', function($q){
+                        return $q->where('status', 1);
+                    })
+                    ->orWhere('product_type', 'box_design') // Add box design type
+                    ->whereHas('boxDesign'); // Ensure box design exists
+            })
+            ->pluck('id')->toArray();
 
-        $cart_ids = Cart::where('user_id',$request->user()->id)->where('product_type', 'product')->whereHas('product', function($query){
-            return $query->where('status', 1)->whereHas('product', function($q){
-                return $q->where('status', 1)->activeSeller();
-            });
-        })->orWhere('user_id',$request->user()->id)->where('product_type', 'gift_card')->whereHas('giftCard', function($query){
-            return $query->where('status', 1);
-        })->pluck('id')->toArray();
-
-        $query = Cart::with('shippingMethod','seller', 'customer:id,first_name,last_name,email,email_verified_at','giftCard','product.product.product','product.sku','product.product.product.shippingMethods.shippingMethod','product.product_variations.attribute', 'product.product_variations.attribute_value.color')->whereIn('id',$cart_ids)->where('is_select', 1)->get();
+        $query = Cart::with('shippingMethod','seller', 'customer:id,first_name,last_name,email,email_verified_at','giftCard','product.product.product','product.sku','product.product.product.shippingMethods.shippingMethod','product.product_variations.attribute', 'product.product_variations.attribute_value.color','boxDesign')->whereIn('id',$cart_ids)->where('is_select', 1)->get();
 
         $carts = CartsResource::collection($query)->groupBy('seller_id');
 
@@ -166,7 +174,7 @@ class CartController extends Controller
             'product_id' => 'required',
             'qty' => 'required',
             'price' => 'required',
-            'product_type' => 'required',
+            'product_type' => 'required|in:product,gift_card,box_design', // Add box_design
             'seller_id' => 'required',
         ]);
 
@@ -182,7 +190,8 @@ class CartController extends Controller
             }else{
                 Cart::create([
                     'user_id' => $customer->id,
-                    'product_type' => ($request->product_type == 'gift_card') ? 'gift_card' : 'product',
+                    'product_type' => $request->product_type,
+                    // 'product_type' => ($request->product_type == 'gift_card') ? 'gift_card' : 'product',
                     'product_id' => $request->product_id,
                     'price' => $request->price,
                     'qty' => $request->qty,

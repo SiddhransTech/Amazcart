@@ -227,26 +227,93 @@ class CartRepository{
         }
     }
 
-    public function getCartData(){
-        $cart_ids =[];
-        if(auth()->check()){
-            $cart_ids = $this->cart::where('user_id',auth()->user()->id)->where('product_type', 'product')->whereHas('product', function($query){
-                return $query->where('status', 1)->whereHas('product', function($q){
-                    return $q->where('status', 1)->activeSeller();
-                });
-            })->orWhere('user_id',auth()->user()->id)->where('product_type', 'gift_card')->whereHas('giftCard', function($query){
-                return $query->where('status', 1);
-            })->pluck('id')->toArray();
-        }else{
-            $cart_ids = $this->cart::where('session_id',session()->getId())->where('product_type', 'product')->whereHas('product', function($query){
-                return $query->where('status', 1)->whereHas('product', function($q){
-                    return $q->where('status', 1)->activeSeller();
-                });
-            })->orWhere('session_id',session()->getId())->where('product_type', 'gift_card')->whereHas('giftCard', function($query){
-                return $query->where('status', 1);
-            })->pluck('id')->toArray();
+    // public function getCartData(){
+    //     $cart_ids =[];
+    //     if(auth()->check()){
+    //         $cart_ids = $this->cart::where('user_id',auth()->user()->id)->where('product_type', 'product')->whereHas('product', function($query){
+    //             return $query->where('status', 1)->whereHas('product', function($q){
+    //                 return $q->where('status', 1)->activeSeller();
+    //             });
+    //         })->orWhere('user_id',auth()->user()->id)->where('product_type', 'gift_card')->whereHas('giftCard', function($query){
+    //             return $query->where('status', 1);
+    //         })->pluck('id')->toArray();
+    //     }else{
+    //         $cart_ids = $this->cart::where('session_id',session()->getId())->where('product_type', 'product')->whereHas('product', function($query){
+    //             return $query->where('status', 1)->whereHas('product', function($q){
+    //                 return $q->where('status', 1)->activeSeller();
+    //             });
+    //         })->orWhere('session_id',session()->getId())->where('product_type', 'gift_card')->whereHas('giftCard', function($query){
+    //             return $query->where('status', 1);
+    //         })->pluck('id')->toArray();
+    //     }
+    //     $query = $this->cart::with('product.product')->whereIn('id',$cart_ids)->where('is_select', 1)->get();
+    //     $cartData = $query->groupBy('seller_id');
+    //     $recs = new \Illuminate\Database\Eloquent\Collection($query);
+    //     $grouped = $recs->groupBy('seller_id');
+
+    //     $shipping_charge = 0;
+    //     $method_shipping_cost = 0;
+    //     $additional_charge = 0;
+    //     foreach($grouped as $key => $item){
+    //         foreach($item as $key => $data){
+    //             if($data->product_type != "gift_card" && !empty($data->product->sku) && $data->product->sku->additional_shipping > 0){
+    //                 $additional_charge +=  $data->product->sku->additional_shipping;
+    //             }
+    //         }
+    //     }
+    //     $shipping_charge = $method_shipping_cost + $additional_charge;
+    //     return [
+    //         'shipping_charge' => $shipping_charge,
+    //         'cartData' => $cartData
+    //     ];
+    // }
+    public function getCartData()
+    {
+        $cart_ids = [];
+        
+        // Base query conditions for both authenticated and guest users
+        $cartQuery = function($query) {
+            $query->where(function($q) {
+                $q->where('product_type', 'product')
+                    ->whereHas('product', function($productQuery) {
+                        return $productQuery->where('status', 1)
+                            ->whereHas('product', function($q) {
+                                return $q->where('status', 1)->activeSeller();
+                            });
+                    })
+                    ->orWhere('product_type', 'gift_card')
+                    ->whereHas('giftCard', function($giftCardQuery) {
+                        return $giftCardQuery->where('status', 1);
+                    })
+                    ->orWhere('product_type', 'box_design')
+                    ->whereHas('boxDesign');
+            });
+        };
+
+        if (auth()->check()) {
+            $cart_ids = $this->cart::where('user_id', auth()->user()->id)
+                ->where($cartQuery)
+                ->pluck('id')
+                ->toArray();
+        } else {
+            $cart_ids = $this->cart::where('session_id', session()->getId())
+                ->where($cartQuery)
+                ->pluck('id')
+                ->toArray();
         }
-        $query = $this->cart::with('product.product')->whereIn('id',$cart_ids)->where('is_select', 1)->get();
+
+        // Load relationships including boxDesign
+        $query = $this->cart::with([
+                'product.product.product', // Maintain existing relationships
+                'giftCard',
+                'boxDesign',
+                'product.product_variations.attribute',
+                'product.product_variations.attribute_value.color'
+            ])
+            ->whereIn('id', $cart_ids)
+            ->where('is_select', 1)
+            ->get();
+
         $cartData = $query->groupBy('seller_id');
         $recs = new \Illuminate\Database\Eloquent\Collection($query);
         $grouped = $recs->groupBy('seller_id');
@@ -254,14 +321,20 @@ class CartRepository{
         $shipping_charge = 0;
         $method_shipping_cost = 0;
         $additional_charge = 0;
-        foreach($grouped as $key => $item){
-            foreach($item as $key => $data){
-                if($data->product_type != "gift_card" && !empty($data->product->sku) && $data->product->sku->additional_shipping > 0){
-                    $additional_charge +=  $data->product->sku->additional_shipping;
+
+        foreach ($grouped as $key => $item) {
+            foreach ($item as $key => $data) {
+                // Only apply additional shipping for physical products (not gift cards or box designs)
+                if ($data->product_type == "product" && 
+                    !empty($data->product->sku) && 
+                    $data->product->sku->additional_shipping > 0) {
+                    $additional_charge += $data->product->sku->additional_shipping;
                 }
             }
         }
+
         $shipping_charge = $method_shipping_cost + $additional_charge;
+
         return [
             'shipping_charge' => $shipping_charge,
             'cartData' => $cartData

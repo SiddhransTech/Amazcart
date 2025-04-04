@@ -6,11 +6,6 @@ use Illuminate\Support\Facades\Schema;
 
 class CreateCartsTable extends Migration
 {
-    /**
-     * Run the migrations.
-     *
-     * @return void
-     */
     public function up()
     {
         Schema::create('carts', function (Blueprint $table) {
@@ -25,23 +20,36 @@ class CreateCartsTable extends Migration
             $table->string('sku')->nullable();
             $table->boolean('is_select')->default(0);
             $table->unsignedBigInteger('shipping_method_id')->nullable();
+            $table->unsignedBigInteger('box_design_id')->nullable();
             $table->timestamps();
+
             $table->foreign('user_id')
                 ->references('id')->on('users')
                 ->onDelete('cascade');
+                
             $table->foreign('seller_id')
                 ->references('id')->on('users')
                 ->onDelete('cascade');
         });
+
+        // Make sure box_designs table exists first
+        if (Schema::hasTable('box_designs')) {
+            Schema::table('carts', function (Blueprint $table) {
+                $table->foreign('box_design_id')
+                    ->references('id')->on('box_designs')
+                    ->onDelete('set null');
+            });
+        }
     }
 
-    /**
-     * Reverse the migrations.
-     *
-     * @return void
-     */
     public function down()
     {
+        Schema::table('carts', function (Blueprint $table) {
+            $table->dropForeign(['box_design_id']);
+            $table->dropForeign(['user_id']);
+            $table->dropForeign(['seller_id']);
+        });
+        
         Schema::dropIfExists('carts');
     }
 }

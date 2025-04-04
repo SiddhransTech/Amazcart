@@ -41,3 +41,21 @@ class CreateBoxDesignsTable extends Migration
         Schema::dropIfExists('box_designs');
     }
 }
+
+// Here's the SQL statement to update your existing carts table to add the box_design_id column and its foreign key constraint:
+
+//     -- First add the new column (if it doesn't exist)
+//     ALTER TABLE `carts` 
+//     ADD COLUMN `box_design_id` BIGINT(20) UNSIGNED NULL DEFAULT NULL AFTER `shipping_method_id`;
+    
+//     -- Then add the foreign key constraint (only if box_designs table exists)
+//     ALTER TABLE `carts` 
+//     ADD CONSTRAINT `carts_box_design_id_foreign` 
+//     FOREIGN KEY (`box_design_id`) 
+//     REFERENCES `box_designs` (`id`) 
+//     ON DELETE SET NULL 
+//     ON UPDATE CASCADE;
+    
+//     -- Add index for better performance
+//     ALTER TABLE `carts` 
+//     ADD INDEX `carts_box_design_id_foreign` (`box_design_id`);
