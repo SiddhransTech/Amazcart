@@ -22,7 +22,7 @@ class Cart extends Model
     }
     public function boxDesign()
     {
-        return $this->belongsTo(BoxDesign::class, 'product_id', 'id');
+        return $this->belongsTo(BoxDesign::class, 'box_design_id', 'id');
     }
     public function shippingMethod()
     {

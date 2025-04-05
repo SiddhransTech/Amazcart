@@ -709,7 +709,6 @@ async function saveBoxConfiguration() {
             faces: {}
         };
 
-        // ... (your existing face data collection code)
         const faceNames = ['front', 'back', 'left', 'right', 'top', 'bottom'];
         faceNames.forEach(face => {
             boxData.faces[face] = { hasAttachment: false, attachment: null };
@@ -799,39 +798,78 @@ async function saveBoxConfiguration() {
 async function addBoxDesignToCart(boxDesignId, price, sellerId) {
     try {
         const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+        if (!csrfToken) {
+            throw new Error('CSRF token not found');
+        }
+
+        const payload = {
+            box_design_id: boxDesignId,
+            product_type: 'box_design',
+            qty: 50, // Minimum quantity
+            price: price,
+            seller_id: sellerId
+        };
+
+        console.log('Sending payload:', payload); // Debug log
+
         const response = await fetch('/cart/store', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Accept': 'application/json',
-                'X-CSRF-TOKEN': csrfToken
+                'X-CSRF-TOKEN': csrfToken,
+                'X-Requested-With': 'XMLHttpRequest'
             },
-            body: JSON.stringify({
-                product_id: boxDesignId,
-                product_type: 'box_design',
-                qty: 1,
-                price: price,
-                seller_id: sellerId
-            })
+            body: JSON.stringify(payload),
+            credentials: 'include' // Important for sessions
         });
 
-        const result = await response.json();
-
+        // Handle non-2xx responses
         if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.message || 'Failed to add to cart');
-        }        
-        console.log('Added to cart:', result);
+            // Try to get error details from response
+            let errorDetails;
+            try {
+                errorDetails = await response.json();
+            } catch (e) {
+                errorDetails = { message: await response.text() };
+            }
+            
+            console.error('Server responded with error:', {
+                status: response.status,
+                details: errorDetails
+            });
+            
+            throw new Error(errorDetails.message || `Server error (${response.status})`);
+        }
+
+        const result = await response.json();
+        console.log('API Response:', result); // Debug log
+        
         updateCartUI(result.count_bottom);
         showToast('Box design added to cart!');
         
         return result;
         
     } catch (error) {
-        console.error('Cart error:', error);
-        alert('Design saved but failed to add to cart');
-        showToast(error.message);
-        throw error; // Re-throw for handling in saveBoxConfiguration
+        console.error('Cart error details:', {
+            error: error,
+            message: error.message,
+            stack: error.stack,
+            timestamp: new Date().toISOString()
+        });
+        
+        // User-friendly error messages
+        let displayMessage = 'Failed to add to cart';
+        if (error.message.includes('CSRF')) {
+            displayMessage = 'Session expired - please refresh the page';
+        } else if (error.message.includes('Unauthenticated')) {
+            displayMessage = 'Please login to complete your purchase';
+        } else if (error.message.includes('validation')) {
+            displayMessage = 'Invalid data - please check your inputs';
+        }
+        
+        showToast(displayMessage);
+        throw error;
     }
 }
 // Helper function to calculate box price (implement based on your pricing logic)
@@ -860,8 +898,6 @@ function updateCartUI(cartCount) {
     // If you have a cart preview, update it here
     const cartPreview = document.querySelector('.cart-preview');
     if (cartPreview) {
-        // You might want to fetch and update the cart contents here
-        // Example: fetchCartContents().then(updateCartPreview);
     }
     
     // Optional: Show a success notification
@@ -877,10 +913,6 @@ function showToast(message) {
     
     // Or with a toast library:
     // Toastify({ text: message }).showToast();
-}
-
-function showErrorAlert(message) {
-    alert(`Error: ${message}`);
 }
 // Utility function to convert data URL to Blob
 function dataURLtoBlob(dataurl) {

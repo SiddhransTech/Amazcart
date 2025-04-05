@@ -21,11 +21,6 @@ class BoxConfigurationController extends Controller
     {
         try {
 
-              // Handle FormData
-            // $boxData = json_decode($request->boxData, true);
-            // $modelFile = $request->file('model');
-            // $imageFile = $request->file('image');
-
             // Validate incoming data
             $validator = Validator::make($request->all(), [
                 'boxData' => 'required|json',

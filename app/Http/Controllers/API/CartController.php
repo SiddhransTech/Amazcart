@@ -8,6 +8,10 @@ use App\Services\CartService;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\CartsResource;
 use App\Repositories\CheckoutRepository;
+use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\Log; 
+use App\Models\BoxDesign; 
+// user Illuminate\fa
 /**
 * @group Cart
 *
@@ -169,12 +173,23 @@ class CartController extends Controller
      * }
      */
 
-    public function addToCart(Request $request){
+     public function addToCart(Request $request){
         $request->validate([
-            'product_id' => 'required',
-            'qty' => 'required',
+            'product_id' => 'required_if:product_type,product,gift_card',
+            'box_design_id' => 'required_if:product_type,box_design',
+            'qty' => [
+                'required',
+                'numeric',
+                function ($attribute, $value, $fail) use ($request) {
+                    if ($request->product_type === 'box_design' && $value < 50) {
+                        $fail('The quantity must be at least 50 for box designs.');
+                    } elseif ($value < 1) {
+                        $fail('The quantity must be at least 1.');
+                    }
+                }
+            ],
             'price' => 'required',
-            'product_type' => 'required|in:product,gift_card,box_design', // Add box_design
+            'product_type' => 'required|in:product,gift_card,box_design',
             'seller_id' => 'required',
         ]);
 
