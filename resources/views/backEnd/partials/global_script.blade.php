@@ -4,13 +4,13 @@
         $('#add_to_cart_btn').prop('disabled',true);
         $('#add_to_cart_btn').html("{{__('defaultTheme.adding')}}");
         var formData = new FormData();
-        formData.append('_token', "{{ csrf_token() }}");
-        formData.append('price', price);
-        formData.append('qty', qty);
-        formData.append('product_id', product_sku_id);
-        formData.append('seller_id', seller_id);
-        formData.append('shipping_method_id', shipping_type);
-        formData.append('type', type);
+        // formData.append('_token', "{{ csrf_token() }}");
+        // formData.append('price', price);
+        // formData.append('qty', qty);
+        // formData.append('product_id', product_sku_id);
+        // formData.append('seller_id', seller_id);
+        // formData.append('shipping_method_id', shipping_type);
+        // formData.append('type', type);
         $('#pre-loader').removeClass('d-none');
         var base_url = $('#url').val();
         $.ajax({

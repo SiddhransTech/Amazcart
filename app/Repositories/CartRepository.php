@@ -274,7 +274,7 @@ class CartRepository{
         // Base query conditions for both authenticated and guest users
         $cartQuery = function($query) {
             $query->where(function($q) {
-                $q->where('product_type', 'product')
+                $q->where('product_type', 'product')->orWhere('type', 'product')
                     ->whereHas('product', function($productQuery) {
                         return $productQuery->where('status', 1)
                             ->whereHas('product', function($q) {

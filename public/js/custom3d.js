@@ -691,9 +691,9 @@ function setupFaceViewControls() {
 
 // Save box configuration
 async function saveBoxConfiguration() {
+    const saveBtn = document.querySelector('.add-to-cart');
     try {
         // Show loading state
-        const saveBtn = document.querySelector('.add-to-cart');
         saveBtn.disabled = true;
         saveBtn.textContent = 'Saving...';
 
@@ -741,18 +741,35 @@ async function saveBoxConfiguration() {
         const modelBlob = new Blob([gltf], { type: 'model/gltf-binary' });
         const uniqueId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
-        // 3. Capture screenshot
-        camera.position.set(-80, 60, 170);
-        camera.lookAt(box.els.group.position);
-        camera.updateProjectionMatrix();
-        renderer.render(scene, camera);
-        const imageDataUrl = renderer.domElement.toDataURL('image/png');
+        // 3. Capture screenshot with error handling
+        let imageBlob;
+        try {
+            camera.position.set(-80, 60, 170);
+            camera.lookAt(box.els.group.position);
+            camera.updateProjectionMatrix();
+            renderer.render(scene, camera);
+            
+            // Verify renderer and canvas
+            if (!renderer.domElement || !renderer.domElement.toDataURL) {
+                throw new Error('Renderer canvas not available');
+            }
+            
+            const imageDataUrl = renderer.domElement.toDataURL('image/png');
+            if (!imageDataUrl || !imageDataUrl.startsWith('data:image/png')) {
+                throw new Error('Failed to capture valid screenshot');
+            }
+            
+            imageBlob = dataURLtoBlob(imageDataUrl);
+        } catch (screenshotError) {
+            console.error('Screenshot error:', screenshotError);
+            throw new Error('Could not capture box preview. Please try again.');
+        }
 
         // 4. Prepare FormData
         const formData = new FormData();
         formData.append('boxData', JSON.stringify(boxData));
         formData.append('model', modelBlob, `${uniqueId}.glb`);
-        formData.append('image', dataURLtoBlob(imageDataUrl), `${uniqueId}.png`);
+        formData.append('image', imageBlob, `${uniqueId}.png`);
         formData.append('price', calculateBoxPrice(boxData));
         formData.append('seller_id', getCurrentSellerId());
 
@@ -760,7 +777,6 @@ async function saveBoxConfiguration() {
         const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
         
         // 6. First save the box design
-        // API endpoint - use absolute URL
         const apiUrl = `${window.location.origin}/api/box-designs/save-box-configuration`;
 
         // Make the request with error handling
@@ -769,10 +785,9 @@ async function saveBoxConfiguration() {
             body: formData,
             headers: {
                 'Accept': 'application/json',
-                // ...(csrfToken && { 'X-CSRF-TOKEN': csrfToken })
                 'X-CSRF-TOKEN': csrfToken
             },
-            credentials: 'include' // Important for sessions/cookies
+            credentials: 'include'
         });
 
         if (!response.ok) {
@@ -780,18 +795,22 @@ async function saveBoxConfiguration() {
             throw new Error(`Server responded with ${response.status}: ${errorText}`);
         }
 
-        // const boxDesignData = await saveResponse.json();
         const result = await response.json();
         console.log('Success:', result);
         alert('Box design saved successfully!');
         
         // 7. Then add to cart
-        // Proceed to add to cart
         await addBoxDesignToCart(result.data.id, result.data.price, result.data.seller_id);
 
     } catch (error) {
         console.error('Error saving configuration:', error);
         alert(`Failed to save: ${error.message}`);
+    } finally {
+        // Always reset button state
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = 'Add to Cart';
+        }
     }
 }
 
@@ -802,73 +821,45 @@ async function addBoxDesignToCart(boxDesignId, price, sellerId) {
             throw new Error('CSRF token not found');
         }
 
-        const payload = {
-            box_design_id: boxDesignId,
-            product_type: 'box_design',
-            qty: 50, // Minimum quantity
-            price: price,
-            seller_id: sellerId
-        };
+        // CORRECTED PAYLOAD - use FormData to match your existing cart implementation
+        const formData = new FormData();
+        formData.append('_token', csrfToken);
+        formData.append('box_design_id', boxDesignId);
+        formData.append('product_type', 'box_design'); // Consistent field name
+        formData.append('qty', 50);
+        formData.append('price', price);
+        formData.append('seller_id', sellerId);
+        formData.append('shipping_method_id', 0);
+        formData.append('is_buy_now', 'no');
 
-        console.log('Sending payload:', payload); // Debug log
+        console.log('Sending payload:', Object.fromEntries(formData));
 
         const response = await fetch('/cart/store', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                'X-CSRF-TOKEN': csrfToken,
-                'X-Requested-With': 'XMLHttpRequest'
-            },
-            body: JSON.stringify(payload),
-            credentials: 'include' // Important for sessions
+            body: formData, // Use FormData instead of JSON
+            credentials: 'include'
         });
 
-        // Handle non-2xx responses
         if (!response.ok) {
-            // Try to get error details from response
-            let errorDetails;
-            try {
-                errorDetails = await response.json();
-            } catch (e) {
-                errorDetails = { message: await response.text() };
+            const errorData = await response.json();
+            console.error('Validation errors:', errorData.errors);
+            if (errorData.errors) {
+                const errorMessages = Object.values(errorData.errors).flat();
+                showToast('Validation errors: ' + errorMessages.join(', '));
             }
-            
-            console.error('Server responded with error:', {
-                status: response.status,
-                details: errorDetails
-            });
-            
-            throw new Error(errorDetails.message || `Server error (${response.status})`);
+            throw new Error(errorData.message || `Server error (${response.status})`);
         }
 
         const result = await response.json();
-        console.log('API Response:', result); // Debug log
+        console.log('API Response:', result);
         
         updateCartUI(result.count_bottom);
         showToast('Box design added to cart!');
         
         return result;
-        
     } catch (error) {
-        console.error('Cart error details:', {
-            error: error,
-            message: error.message,
-            stack: error.stack,
-            timestamp: new Date().toISOString()
-        });
-        
-        // User-friendly error messages
-        let displayMessage = 'Failed to add to cart';
-        if (error.message.includes('CSRF')) {
-            displayMessage = 'Session expired - please refresh the page';
-        } else if (error.message.includes('Unauthenticated')) {
-            displayMessage = 'Please login to complete your purchase';
-        } else if (error.message.includes('validation')) {
-            displayMessage = 'Invalid data - please check your inputs';
-        }
-        
-        showToast(displayMessage);
+        console.error('Cart error:', error);
+        showToast(error.message || 'Failed to add to cart');
         throw error;
     }
 }
@@ -915,16 +906,36 @@ function showToast(message) {
     // Toastify({ text: message }).showToast();
 }
 // Utility function to convert data URL to Blob
-function dataURLtoBlob(dataurl) {
-    const parts = dataurl.split(',');
-    const mime = parts[0].match(/:(.*?);/)[1];
-    const bstr = atob(parts[1]);
-    const n = bstr.length;
-    const u8arr = new Uint8Array(n);
-    for (let i = 0; i < n; i++) {
-        u8arr[i] = bstr.charCodeAt(i);
+function dataURLtoBlob(dataURL) {
+    try {
+        if (!dataURL || typeof dataURL !== 'string') {
+            throw new Error('Invalid data URL');
+        }
+        
+        // Check if dataURL is properly formatted
+        if (!dataURL.startsWith('data:')) {
+            throw new Error('Invalid data URL format');
+        }
+
+        const parts = dataURL.split(',');
+        if (parts.length < 2) {
+            throw new Error('Malformed data URL');
+        }
+
+        const mime = parts[0].match(/:(.*?);/)[1];
+        const bstr = atob(parts[1]);
+        let n = bstr.length;
+        const u8arr = new Uint8Array(n);
+
+        while (n--) {
+            u8arr[n] = bstr.charCodeAt(n);
+        }
+
+        return new Blob([u8arr], { type: mime });
+    } catch (error) {
+        console.error('Error converting data URL to Blob:', error);
+        throw new Error('Failed to process image: ' + error.message);
     }
-    return new Blob([u8arr], { type: mime });
 }
 
 document.querySelector('.add-to-cart').addEventListener('click', saveBoxConfiguration);

@@ -139,13 +139,15 @@ class CartController extends Controller
     // }
     public function store(Request $request)
 {
+    Log::info('Request Payload:', $request->all()); // Add this line
     DB::beginTransaction();
     try {
         // Validate the request
         $validator = Validator::make($request->all(), [
-            'product_id' => 'nullable|required_if:product_type,product,gift_card',
-            'box_design_id' => 'nullable|required_if:product_type,box_design|exists:box_designs,id',
-            'product_type' => 'required|in:product,gift_card,box_design',
+            'product_id' => 'nullable|required_if:product_type,product,gift_card|required_if:type,product,gift_card',
+            'box_design_id' => 'nullable|required_if:product_type,box_design|required_if:type,box_design|exists:box_designs,id',
+            'product_type' => 'required_without:type|in:product,gift_card,box_design',
+            'type' => 'required_without:product_type|in:product,gift_card,box_design',
             'qty' => [
                 'required',
                 'numeric',
@@ -159,7 +161,6 @@ class CartController extends Controller
             'price' => 'required|numeric|min:0.01',
             'seller_id' => 'required|exists:users,id'
         ]);
-
         if ($validator->fails()) {
             Log::error('Cart validation failed', $validator->errors()->toArray());
             return response()->json([
@@ -168,10 +169,11 @@ class CartController extends Controller
                 'errors' => $validator->errors()
             ], 422);
         }
+        $productType = $request->has('product_type') ? $request->product_type : $request->type;
 
         // Determine IDs based on product type
-        $productId = $request->product_type === 'box_design' ? null : $request->product_id;
-        $boxDesignId = $request->product_type === 'box_design' ? $request->box_design_id : null;
+        $productId = $productType === 'box_design' ? null : $request->product_id;
+        $boxDesignId = $productType === 'box_design' ? $request->box_design_id : null;
 
         // Handle authentication and session
         $user = auth()->user();
@@ -179,7 +181,7 @@ class CartController extends Controller
         $sessionId = $user ? null : session()->getId();
 
         // Skip stock check for box designs
-        if ($request->product_type !== 'box_design') {
+        if ($productType !== 'box_design') {
             $result = $this->cartService->store($request->except('_token'));
             if ($result == 'out_of_stock') {
                 return response()->json([
@@ -195,7 +197,7 @@ class CartController extends Controller
             'session_id' => $sessionId,
             'product_id' => $productId,
             'box_design_id' => $boxDesignId,
-            'product_type' => $request->product_type,
+            'product_type' => $productType,
             'qty' => $request->qty,
             'price' => $request->price,
             'total_price' => $request->price * $request->qty,
@@ -213,10 +215,10 @@ class CartController extends Controller
                 'user_id' => $userId,
                 'session_id' => $sessionId,
                 // Only include product_id in lookup if it's not a box design
-                ...($request->product_type !== 'box_design' ? ['product_id' => $productId] : []),
+                ...($productType !== 'box_design' ? ['product_id' => $productId] : []),
                 // Only include box_design_id in lookup if it is a box design
-                ...($request->product_type === 'box_design' ? ['box_design_id' => $boxDesignId] : []),
-                'product_type' => $request->product_type
+                ...($productType === 'box_design' ? ['box_design_id' => $boxDesignId] : []),
+                'product_type' => $productType
             ],
             [
                 'product_id' => $productId,
@@ -239,7 +241,7 @@ class CartController extends Controller
             'giftCard'
         ];
 
-        if ($request->product_type === 'box_design') {
+        if ($productType === 'box_design') {
             $relationships[] = 'boxDesign';
         }
 
@@ -253,8 +255,8 @@ class CartController extends Controller
         DB::commit();
 
         LogActivity::successLog('Cart item added successfully', [
-            'type' => $request->product_type,
-            'id' => $request->product_type === 'box_design' ? $boxDesignId : $productId,
+            'type' => $productType,
+            'id' => $productType === 'box_design' ? $boxDesignId : $productId,
             'cart_id' => $cartItem->id
         ]);
 

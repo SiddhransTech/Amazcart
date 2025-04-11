@@ -61,4 +61,12 @@ class Cart extends Model
     public function customer(){
         return $this->belongsTo(User::class,'user_id', 'id')->withDefault();
     }
+
+    // In Cart model
+    public static function getCartCount($user = null)
+    {
+        return $user 
+            ? self::where('user_id', $user->id)->count()
+            : self::where('session_id', session()->getId())->count();
+    }
 }

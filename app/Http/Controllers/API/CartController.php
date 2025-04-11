@@ -11,7 +11,7 @@ use App\Repositories\CheckoutRepository;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Log; 
 use App\Models\BoxDesign; 
-// user Illuminate\fa
+use Illuminate\Support\Facades\DB;
 /**
 * @group Cart
 *
@@ -175,8 +175,8 @@ class CartController extends Controller
 
      public function addToCart(Request $request){
         $request->validate([
-            'product_id' => 'required_if:product_type,product,gift_card',
-            'box_design_id' => 'required_if:product_type,box_design',
+            'product_id' => 'required_if:product_type,product,gift_card|required_if:type,product,gift_card',
+            'box_design_id' => 'required_if:product_type,box_design|required_if:type,box_design',
             'qty' => [
                 'required',
                 'numeric',
@@ -188,44 +188,72 @@ class CartController extends Controller
                     }
                 }
             ],
-            'price' => 'required',
+            'price' => 'required|numeric|min:0.01',
             'product_type' => 'required|in:product,gift_card,box_design',
-            'seller_id' => 'required',
+            'seller_id' => 'required|exists:users,id',
         ]);
 
-        $customer = $request->user();
-        $total_price = $request->price*$request->qty;
-        if($customer){
-            $product = Cart::where('user_id',$customer->id)->where('product_id',$request->product_id)->where('product_type',$request->product_type)->first();
-            if($product){
-                $product->update([
-                    'qty' => $product->qty+$request->qty,
-                    'total_price' => $product->total_price + $total_price
+        try {
+            DB::beginTransaction();
+    
+            $customer = $request->user();
+            $total_price = $request->price * $request->qty;
+    
+            $cartData = [
+                'user_id' => $customer ? $customer->id : null,
+                'session_id' => $customer ? null : session()->getId(),
+                'product_type' => $request->product_type,
+                'product_id' => $request->product_type === 'box_design' ? null : $request->product_id,
+                'box_design_id' => $request->product_type === 'box_design' ? $request->box_design_id : null,
+                'price' => $request->price,
+                'qty' => $request->qty,
+                'total_price' => $total_price,
+                'seller_id' => $request->seller_id,
+                'shipping_method_id' => $request->shipping_method_id ?? 0,
+                'sku' => null,
+                'is_select' => 1
+            ];
+    
+            // For box designs, we need to ensure we don't duplicate
+            $existingCartItem = Cart::when($customer, function($query) use ($customer) {
+                    return $query->where('user_id', $customer->id);
+                }, function($query) {
+                    return $query->where('session_id', session()->getId());
+                })
+                ->where('product_type', $request->product_type)
+                ->when($request->product_type === 'box_design', function($query) use ($request) {
+                    return $query->where('box_design_id', $request->box_design_id);
+                }, function($query) use ($request) {
+                    return $query->where('product_id', $request->product_id);
+                })
+                ->first();
+    
+            if ($existingCartItem) {
+                $existingCartItem->update([
+                    'qty' => $existingCartItem->qty + $request->qty,
+                    'total_price' => $existingCartItem->total_price + $total_price
                 ]);
-            }else{
-                Cart::create([
-                    'user_id' => $customer->id,
-                    'product_type' => $request->product_type,
-                    // 'product_type' => ($request->product_type == 'gift_card') ? 'gift_card' : 'product',
-                    'product_id' => $request->product_id,
-                    'price' => $request->price,
-                    'qty' => $request->qty,
-                    'total_price' => $total_price,
-                    'seller_id' => $request->seller_id,
-                    'shipping_method_id' => 0,
-                    'sku' => null,
-                    'is_select' => 1
-                ]);
+                $cartItem = $existingCartItem;
+            } else {
+                $cartItem = Cart::create($cartData);
             }
-
+    
+            DB::commit();
+    
             return response()->json([
-                'message' => trans('app.product added succcessfully'),
+                'success' => true,
+                'message' => 'Item added to cart successfully',
+                'cart_item' => $cartItem,
+                'count_bottom' => Cart::getCartCount($customer)
             ], 201);
-
-        }else{
+    
+        } catch (\Exception $e) {
+            DB::rollBack();
             return response()->json([
-                'message' => trans('app.Unauthenticated')
-            ]);
+                'success' => false,
+                'message' => 'Failed to add to cart',
+                'error' => $e->getMessage()
+            ], 500);
         }
     }
 
