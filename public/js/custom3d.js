@@ -806,7 +806,6 @@ async function saveBoxConfiguration() {
         console.error('Error saving configuration:', error);
         alert(`Failed to save: ${error.message}`);
     } finally {
-        // Always reset button state
         if (saveBtn) {
             saveBtn.disabled = false;
             saveBtn.textContent = 'Add to Cart';
@@ -821,7 +820,6 @@ async function addBoxDesignToCart(boxDesignId, price, sellerId) {
             throw new Error('CSRF token not found');
         }
 
-        // CORRECTED PAYLOAD - use FormData to match your existing cart implementation
         const formData = new FormData();
         formData.append('_token', csrfToken);
         formData.append('box_design_id', boxDesignId);
@@ -865,7 +863,6 @@ async function addBoxDesignToCart(boxDesignId, price, sellerId) {
 }
 // Helper function to calculate box price (implement based on your pricing logic)
 function calculateBoxPrice(boxData) {
-    // Example: calculate based on dimensions and materials
     const basePrice = 10.00;
     const sizeFactor = boxData.parameters.length * boxData.parameters.breadth * boxData.parameters.height;
     return basePrice + (sizeFactor * 0.01);
@@ -877,7 +874,6 @@ function getCurrentSellerId() {
     return document.querySelector('meta[name="seller-id"]')?.content || 1;
 }
 
-// Helper functions
 // Add this function to your custom3d.js file
 function updateCartUI(cartCount) {
     // Update the cart counter in the navbar
@@ -885,25 +881,17 @@ function updateCartUI(cartCount) {
     if (cartCounter) {
         cartCounter.textContent = cartCount;
     }
-    
-    // If you have a cart preview, update it here
     const cartPreview = document.querySelector('.cart-preview');
     if (cartPreview) {
     }
-    
-    // Optional: Show a success notification
+
     showToast('Item added to cart!');
 }
 
 
 // Helper function for notifications
 function showToast(message) {
-    // Use your preferred notification system
-    // Example with a simple alert:
     alert(message);
-    
-    // Or with a toast library:
-    // Toastify({ text: message }).showToast();
 }
 // Utility function to convert data URL to Blob
 function dataURLtoBlob(dataURL) {

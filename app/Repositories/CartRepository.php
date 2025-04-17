@@ -7,6 +7,7 @@ use Modules\Seller\Entities\SellerProductSKU;
 use Modules\Shipping\Entities\ShippingMethod;
 use Illuminate\Support\Facades\Session;
 use Modules\GiftCard\Entities\GiftCard;
+use Illuminate\Support\Facades\Log; 
 
 class CartRepository{
 
@@ -32,6 +33,10 @@ class CartRepository{
         if($data['type'] == 'product'){
             if (isModuleActive('WholeSale')){
                 $sku = SellerProductSKU::with('product', 'wholeSalePrices')->where('user_id',$data['seller_id'])->where('id',$data['product_id'])->first();
+                if(!$sku) {
+                    Log::error('Product not found', ['product_id' => $data['product_id'], 'seller_id' => $data['seller_id']]);
+                    return 'out_of_stock';
+                }
                 if ($sku['wholeSalePrices']){
                     foreach ($sku['wholeSalePrices'] as $w_sale_p){
                         if ( ($w_sale_p->min_qty<=$data['qty']) && ($w_sale_p->max_qty>=$data['qty']) ){
@@ -44,6 +49,10 @@ class CartRepository{
                 }
             }else{
                 $sku = SellerProductSKU::with('product')->where('user_id',$data['seller_id'])->where('id',$data['product_id'])->first();
+                if(!$sku) {
+                    Log::error('Product not found', ['product_id' => $data['product_id'], 'seller_id' => $data['seller_id']]);
+                    return 'out_of_stock';
+                }
             }
             if(isModuleActive('AuctionProducts') && $data['auction_type']=='auction'){
                 $price = $data['price']/$data['qty'];
@@ -274,7 +283,7 @@ class CartRepository{
         // Base query conditions for both authenticated and guest users
         $cartQuery = function($query) {
             $query->where(function($q) {
-                $q->where('product_type', 'product')->orWhere('type', 'product')
+                $q->where('product_type', 'product')
                     ->whereHas('product', function($productQuery) {
                         return $productQuery->where('status', 1)
                             ->whereHas('product', function($q) {
@@ -301,10 +310,10 @@ class CartRepository{
                 ->pluck('id')
                 ->toArray();
         }
-
-        // Load relationships including boxDesign
+    
         $query = $this->cart::with([
-                'product.product.product', // Maintain existing relationships
+                'product.product.product',
+                'product.sku',
                 'giftCard',
                 'boxDesign',
                 'product.product_variations.attribute',
@@ -313,6 +322,15 @@ class CartRepository{
             ->whereIn('id', $cart_ids)
             ->where('is_select', 1)
             ->get();
+
+        // Filter out invalid product items
+        $query = $query->filter(function($cart) {
+            if ($cart->product_type === 'product' && !$cart->product) {
+                Log::warning('Cart item missing product', ['cart_id' => $cart->id, 'product_id' => $cart->product_id]);
+                return false;
+            }
+            return true;
+        });
 
         $cartData = $query->groupBy('seller_id');
         $recs = new \Illuminate\Database\Eloquent\Collection($query);

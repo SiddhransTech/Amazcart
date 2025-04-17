@@ -82,81 +82,123 @@ class CartController extends Controller
 
 
 
-     public function list(Request $request){
-        $cart_ids = Cart::where('user_id',$request->user()->id)
+     public function list(Request $request)
+{
+    try {
+        $cart_ids = Cart::where('user_id', $request->user()->id)
             ->where(function($query) {
                 $query->where('product_type', 'product')
-                    ->whereHas('product', function($q){
-                        return $q->where('status', 1)->whereHas('product', function($q){
+                    ->whereHas('product', function($q) {
+                        return $q->where('status', 1)->whereHas('product', function($q) {
                             return $q->where('status', 1)->activeSeller();
                         });
                     })
                     ->orWhere('product_type', 'gift_card')
-                    ->whereHas('giftCard', function($q){
+                    ->whereHas('giftCard', function($q) {
                         return $q->where('status', 1);
                     })
-                    ->orWhere('product_type', 'box_design') // Add box design type
-                    ->whereHas('boxDesign'); // Ensure box design exists
+                    ->orWhere('product_type', 'box_design')
+                    ->whereHas('boxDesign', function($q) {
+                        return $q->where('status', 1);
+                    });
             })
-            ->pluck('id')->toArray();
+            ->pluck('id')
+            ->toArray();
 
-        $query = Cart::with('shippingMethod','seller', 'customer:id,first_name,last_name,email,email_verified_at','giftCard','product.product.product','product.sku','product.product.product.shippingMethods.shippingMethod','product.product_variations.attribute', 'product.product_variations.attribute_value.color','boxDesign')->whereIn('id',$cart_ids)->where('is_select', 1)->get();
+        $query = Cart::with([
+                'shippingMethod',
+                'seller', 
+                'customer:id,first_name,last_name,email,email_verified_at',
+                'giftCard',
+                'product.product.product',
+                'product.sku',
+                'product.product.product.shippingMethods.shippingMethod',
+                'product.product_variations.attribute', 
+                'product.product_variations.attribute_value.color',
+                'boxDesign'
+            ])
+            ->whereIn('id', $cart_ids)
+            ->where('is_select', 1)
+            ->get();
+
+        // Filter out invalid cart items
+        $query = $query->filter(function($cartItem) {
+            if ($cartItem->product_type === 'product' && (!$cartItem->product || !$cartItem->product->product)) {
+                return false;
+            }
+            if ($cartItem->product_type === 'gift_card' && !$cartItem->giftCard) {
+                return false;
+            }
+            if ($cartItem->product_type === 'box_design' && !$cartItem->boxDesign) {
+                return false;
+            }
+            return true;
+        });
 
         $carts = CartsResource::collection($query)->groupBy('seller_id');
-
-        // $carts = $query->groupBy('seller_id');
-
-
-
         $recs = new \Illuminate\Database\Eloquent\Collection($query);
-
         $grouped = $recs->groupBy('seller_id');
-
         $shipping_cost = 0;
 
         $checkoutRepo = new CheckoutRepository();
         $shippingMethod = $checkoutRepo->get_active_shipping_methods()[0];
-        foreach($grouped as $key => $item){
+        
+        foreach($grouped as $key => $item) {
             $additional_charge = 0;
             $totalItemPriceForShipping = 0;
             $totalItemWeight = 0;
-            foreach($item as $key => $data){
-                if($data->product_type != "gift_card"){
-                    $additional_charge += !empty($data->product)  &&  !empty($data->product->sku) ? $data->product->sku->additional_shipping:0;
-                    $totalItemPriceForShipping += !empty($data) ? $data->total_price:0;
-                    $totalItemWeight += !empty($data->product->sku->weight) ? $data->product->sku->weight : 0;
+            
+            foreach($item as $data) {
+                if($data->product_type != "gift_card") {
+                    // Handle shipping for products and box designs
+                    if ($data->product_type === 'product' && $data->product && $data->product->sku) {
+                        $additional_charge += $data->product->sku->additional_shipping ?? 0;
+                        $totalItemWeight += $data->product->sku->weight ?? 0;
+                    } elseif ($data->product_type === 'box_design') {
+                        // Add default shipping values for box designs
+                        $additional_charge += 0; // Can be adjusted as needed
+                        $totalItemWeight += 1; // Default weight for box designs
+                    }
+                    
+                    $totalItemPriceForShipping += $data->total_price ?? 0;
                 }
-
             }
-            if($shippingMethod->cost_based_on == 'Price'){
-                if($totalItemPriceForShipping > 0 && $shippingMethod->cost > 0){
-                    $shipping_cost += ($totalItemPriceForShipping / 100) *  $shippingMethod->cost + $additional_charge;
-                }
 
-            }elseif ($shippingMethod->cost_based_on == 'Weight'){
-                if($totalItemWeight > 0 && $shippingMethod->cost > 0){
-                    $shipping_cost += ($totalItemWeight / 100) *  $shippingMethod->cost + $additional_charge;
+            if($shippingMethod->cost_based_on == 'Price') {
+                if($totalItemPriceForShipping > 0 && $shippingMethod->cost > 0) {
+                    $shipping_cost += ($totalItemPriceForShipping / 100) * $shippingMethod->cost + $additional_charge;
                 }
-            }else{
-                if($shippingMethod->cost > 0){
+            } elseif ($shippingMethod->cost_based_on == 'Weight') {
+                if($totalItemWeight > 0 && $shippingMethod->cost > 0) {
+                    $shipping_cost += ($totalItemWeight / 100) * $shippingMethod->cost + $additional_charge;
+                }
+            } else {
+                if($shippingMethod->cost > 0) {
                     $shipping_cost += $shippingMethod->cost + $additional_charge;
                 }
             }
         }
-        if(count($carts) > 0){
+
+        if(count($carts) > 0) {
             return response()->json([
                 'carts' => $carts,
                 'shipping_charge' => $shipping_cost,
                 'message' => trans('app.Success')
-            ],200);
-        }else{
+            ], 200);
+        } else {
             return response()->json([
                 'message' => trans('app.Cart is Empty'),
                 'shipping_charge' => $shipping_cost,
-            ],404);
+            ], 404);
         }
 
+    } catch (\Exception $e) {
+        return response()->json([
+            'message' => 'Error retrieving cart data',
+            'error' => $e->getMessage()
+        ], 500);
     }
+}
 
     /**
      * Add to cart
@@ -173,89 +215,109 @@ class CartController extends Controller
      * }
      */
 
-     public function addToCart(Request $request){
-        $request->validate([
-            'product_id' => 'required_if:product_type,product,gift_card|required_if:type,product,gift_card',
-            'box_design_id' => 'required_if:product_type,box_design|required_if:type,box_design',
-            'qty' => [
-                'required',
-                'numeric',
-                function ($attribute, $value, $fail) use ($request) {
-                    if ($request->product_type === 'box_design' && $value < 50) {
-                        $fail('The quantity must be at least 50 for box designs.');
-                    } elseif ($value < 1) {
-                        $fail('The quantity must be at least 1.');
-                    }
-                }
-            ],
-            'price' => 'required|numeric|min:0.01',
-            'product_type' => 'required|in:product,gift_card,box_design',
-            'seller_id' => 'required|exists:users,id',
-        ]);
-
-        try {
-            DB::beginTransaction();
-    
-            $customer = $request->user();
-            $total_price = $request->price * $request->qty;
-    
-            $cartData = [
-                'user_id' => $customer ? $customer->id : null,
-                'session_id' => $customer ? null : session()->getId(),
-                'product_type' => $request->product_type,
-                'product_id' => $request->product_type === 'box_design' ? null : $request->product_id,
-                'box_design_id' => $request->product_type === 'box_design' ? $request->box_design_id : null,
-                'price' => $request->price,
-                'qty' => $request->qty,
-                'total_price' => $total_price,
-                'seller_id' => $request->seller_id,
-                'shipping_method_id' => $request->shipping_method_id ?? 0,
-                'sku' => null,
-                'is_select' => 1
-            ];
-    
-            // For box designs, we need to ensure we don't duplicate
-            $existingCartItem = Cart::when($customer, function($query) use ($customer) {
-                    return $query->where('user_id', $customer->id);
-                }, function($query) {
-                    return $query->where('session_id', session()->getId());
-                })
-                ->where('product_type', $request->product_type)
-                ->when($request->product_type === 'box_design', function($query) use ($request) {
-                    return $query->where('box_design_id', $request->box_design_id);
-                }, function($query) use ($request) {
-                    return $query->where('product_id', $request->product_id);
-                })
-                ->first();
-    
-            if ($existingCartItem) {
-                $existingCartItem->update([
-                    'qty' => $existingCartItem->qty + $request->qty,
-                    'total_price' => $existingCartItem->total_price + $total_price
-                ]);
-                $cartItem = $existingCartItem;
-            } else {
-                $cartItem = Cart::create($cartData);
-            }
-    
-            DB::commit();
-    
-            return response()->json([
-                'success' => true,
-                'message' => 'Item added to cart successfully',
-                'cart_item' => $cartItem,
-                'count_bottom' => Cart::getCartCount($customer)
-            ], 201);
-    
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to add to cart',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
+     public function addToCart(Request $request)
+     {
+         $request->validate([
+             'product_id' => 'nullable|required_if:product_type,product,gift_card|required_if:type,product,gift_card',
+             'box_design_id' => 'nullable|required_if:product_type,box_design|required_if:type,box_design|exists:box_designs,id',
+             'qty' => [
+                 'required',
+                 'numeric',
+                 function ($attribute, $value, $fail) use ($request) {
+                     if ($request->product_type === 'box_design' && $value < 50) {
+                         $fail('The quantity must be at least 50 for box designs.');
+                     } elseif ($value < 1) {
+                         $fail('The quantity must be at least 1.');
+                     }
+                 }
+             ],
+             'price' => 'required|numeric|min:0.01',
+             'product_type' => 'required_without:type|in:product,gift_card,box_design',
+             'type' => 'required_without:product_type|in:product,gift_card,box_design',
+             'seller_id' => 'required|exists:users,id',
+         ]);
+     
+         try {
+             DB::beginTransaction();
+     
+             $customer = $request->user();
+             $productType = $request->has('product_type') ? $request->product_type : $request->type;
+             $total_price = $request->price * $request->qty;
+     
+             $cartData = [
+                 'user_id' => $customer ? $customer->id : null,
+                 'session_id' => $customer ? null : session()->getId(),
+                 'product_type' => $productType,
+                 'product_id' => $productType === 'box_design' ? null : $request->product_id,
+                 'box_design_id' => $productType === 'box_design' ? $request->box_design_id : null,
+                 'price' => $request->price,
+                 'qty' => $request->qty,
+                 'total_price' => $total_price,
+                 'seller_id' => $request->seller_id,
+                 'shipping_method_id' => $request->shipping_method_id ?? 0,
+                 'sku' => null,
+                 'is_select' => 1
+             ];
+     
+             // Check for existing cart item
+             $existingCartItem = Cart::when($customer, function($query) use ($customer) {
+                     return $query->where('user_id', $customer->id);
+                 }, function($query) {
+                     return $query->where('session_id', session()->getId());
+                 })
+                 ->where('product_type', $productType)
+                 ->when($productType === 'box_design', function($query) use ($request) {
+                     return $query->where('box_design_id', $request->box_design_id);
+                 }, function($query) use ($request) {
+                     return $query->where('product_id', $request->product_id);
+                 })
+                 ->first();
+     
+             if ($existingCartItem) {
+                 $existingCartItem->update([
+                     'qty' => $existingCartItem->qty + $request->qty,
+                     'total_price' => $existingCartItem->total_price + $total_price
+                 ]);
+                 $cartItem = $existingCartItem;
+             } else {
+                 $cartItem = Cart::create($cartData);
+             }
+     
+             // Load relationships based on product type
+             $relationships = ['seller'];
+             if ($productType === 'product') {
+                 $relationships = array_merge($relationships, [
+                     'product.product.product',
+                     'product.sku',
+                     'product.product_variations.attribute',
+                     'product.product_variations.attribute_value.color'
+                 ]);
+             } elseif ($productType === 'gift_card') {
+                 $relationships[] = 'giftCard';
+             } elseif ($productType === 'box_design') {
+                 $relationships[] = 'boxDesign';
+             }
+     
+             $cartItem->load($relationships);
+     
+             DB::commit();
+     
+             return response()->json([
+                 'success' => true,
+                 'message' => 'Item added to cart successfully',
+                 'cart_item' => new CartsResource($cartItem),
+                 'count_bottom' => Cart::getCartCount($customer)
+             ], 201);
+     
+         } catch (\Exception $e) {
+             DB::rollBack();
+             return response()->json([
+                 'success' => false,
+                 'message' => 'Failed to add to cart',
+                 'error' => $e->getMessage()
+             ], 500);
+         }
+     }
 
     /**
      * Remove From Cart

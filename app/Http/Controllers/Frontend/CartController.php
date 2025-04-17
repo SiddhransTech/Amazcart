@@ -138,91 +138,97 @@ class CartController extends Controller
     //     }
     // }
     public function store(Request $request)
-{
-    Log::info('Request Payload:', $request->all()); // Add this line
-    DB::beginTransaction();
-    try {
-        // Validate the request
-        $validator = Validator::make($request->all(), [
-            'product_id' => 'nullable|required_if:product_type,product,gift_card|required_if:type,product,gift_card',
-            'box_design_id' => 'nullable|required_if:product_type,box_design|required_if:type,box_design|exists:box_designs,id',
-            'product_type' => 'required_without:type|in:product,gift_card,box_design',
-            'type' => 'required_without:product_type|in:product,gift_card,box_design',
-            'qty' => [
-                'required',
-                'numeric',
-                'min:1',
-                function ($attribute, $value, $fail) use ($request) {
-                    if ($request->product_type === 'box_design' && $value < 50) {
-                        $fail('Minimum quantity for box designs is 50');
+    {
+        Log::info('Request Payload:', $request->all());
+
+        DB::beginTransaction();
+        try {
+            // Validate the request
+            $validator = Validator::make($request->all(), [
+                'product_id' => 'nullable|required_if:product_type,product,gift_card|required_if:type,product,gift_card',
+                'box_design_id' => 'nullable|required_if:product_type,box_design|required_if:type,box_design|exists:box_designs,id',
+                'product_type' => 'required_without:type|in:product,gift_card,box_design',
+                'type' => 'required_without:product_type|in:product,gift_card,box_design',
+                'qty' => [
+                    'required',
+                    'numeric',
+                    'min:1',
+                    function ($attribute, $value, $fail) use ($request) {
+                        if (($request->product_type === 'box_design' || $request->type === 'box_design') && $value < 50) {
+                            $fail('Minimum quantity for box designs is 50');
+                        }
                     }
-                }
-            ],
-            'price' => 'required|numeric|min:0.01',
-            'seller_id' => 'required|exists:users,id'
-        ]);
-        if ($validator->fails()) {
-            Log::error('Cart validation failed', $validator->errors()->toArray());
-            return response()->json([
-                'success' => false,
-                'message' => 'Validation failed',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-        $productType = $request->has('product_type') ? $request->product_type : $request->type;
+                ],
+                'price' => 'required|numeric|min:0.01',
+                'seller_id' => 'required|exists:users,id'
+            ]);
 
-        // Determine IDs based on product type
-        $productId = $productType === 'box_design' ? null : $request->product_id;
-        $boxDesignId = $productType === 'box_design' ? $request->box_design_id : null;
-
-        // Handle authentication and session
-        $user = auth()->user();
-        $userId = $user ? $user->id : null;
-        $sessionId = $user ? null : session()->getId();
-
-        // Skip stock check for box designs
-        if ($productType !== 'box_design') {
-            $result = $this->cartService->store($request->except('_token'));
-            if ($result == 'out_of_stock') {
+            if ($validator->fails()) {
+                Log::error('Cart validation failed', $validator->errors()->toArray());
                 return response()->json([
                     'success' => false,
-                    'message' => 'Out of stock'
-                ], 400);
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
             }
-        }
 
-        // Prepare cart data
-        $cartData = [
-            'user_id' => $userId,
-            'session_id' => $sessionId,
-            'product_id' => $productId,
-            'box_design_id' => $boxDesignId,
-            'product_type' => $productType,
-            'qty' => $request->qty,
-            'price' => $request->price,
-            'total_price' => $request->price * $request->qty,
-            'seller_id' => $request->seller_id,
-            'shipping_method_id' => 0,
-            'sku' => null,
-            'is_select' => 1
-        ];
+            // Use product_type or type
+            $productType = $request->has('product_type') ? $request->product_type : $request->type;
 
-        Log::info('Creating/updating cart item', $cartData);
+            // Determine IDs based on product type
+            $productId = $productType === 'box_design' ? null : $request->product_id;
+            $boxDesignId = $productType === 'box_design' ? $request->box_design_id : null;
 
-        // Create or update cart item
-        $cartItem = \App\Models\Cart::updateOrCreate(
-            [
+            // Handle authentication and session
+            $user = auth()->user();
+            $userId = $user ? $user->id : null;
+            $sessionId = $user ? null : session()->getId();
+
+            // Validate product, gift card, or box design existence
+            if ($productType === 'product') {
+                $sku = SellerProductSKU::find($request->product_id);
+                if (!$sku) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Product not found'
+                    ], 404);
+                }
+            } elseif ($productType === 'gift_card') {
+                $giftCard = GiftCard::find($request->product_id);
+                if (!$giftCard) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Gift card not found'
+                    ], 404);
+                }
+            } elseif ($productType === 'box_design') {
+                $boxDesign = \App\Models\BoxDesign::find($request->box_design_id);
+                if (!$boxDesign) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Box design not found'
+                    ], 404);
+                }
+            }
+
+            // Skip stock check for box designs
+            if ($productType !== 'box_design') {
+                $result = $this->cartService->store($request->except('_token'));
+                if ($result == 'out_of_stock') {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Out of stock'
+                    ], 400);
+                }
+            }
+
+            // Prepare cart data
+            $cartData = [
                 'user_id' => $userId,
                 'session_id' => $sessionId,
-                // Only include product_id in lookup if it's not a box design
-                ...($productType !== 'box_design' ? ['product_id' => $productId] : []),
-                // Only include box_design_id in lookup if it is a box design
-                ...($productType === 'box_design' ? ['box_design_id' => $boxDesignId] : []),
-                'product_type' => $productType
-            ],
-            [
                 'product_id' => $productId,
                 'box_design_id' => $boxDesignId,
+                'product_type' => $productType,
                 'qty' => $request->qty,
                 'price' => $request->price,
                 'total_price' => $request->price * $request->qty,
@@ -230,64 +236,86 @@ class CartController extends Controller
                 'shipping_method_id' => 0,
                 'sku' => null,
                 'is_select' => 1
-            ]
-        );
+            ];
 
-        // Load relationships based on product type
-        $relationships = [
-            'product.product.product',
-            'product.product_variations.attribute',
-            'product.product_variations.attribute_value.color',
-            'giftCard'
-        ];
+            Log::info('Creating/updating cart item', $cartData);
 
-        if ($productType === 'box_design') {
-            $relationships[] = 'boxDesign';
+            // Create or update cart item
+            $cartItem = \App\Models\Cart::updateOrCreate(
+                [
+                    'user_id' => $userId,
+                    'session_id' => $sessionId,
+                    ...($productType !== 'box_design' ? ['product_id' => $productId] : []),
+                    ...($productType === 'box_design' ? ['box_design_id' => $boxDesignId] : []),
+                    'product_type' => $productType
+                ],
+                [
+                    'product_id' => $productId,
+                    'box_design_id' => $boxDesignId,
+                    'qty' => $request->qty,
+                    'price' => $request->price,
+                    'total_price' => $request->price * $request->qty,
+                    'seller_id' => $request->seller_id,
+                    'shipping_method_id' => 0,
+                    'sku' => null,
+                    'is_select' => 1
+                ]
+            );
+
+            // Load relationships based on product type
+            $relationships = [
+                'product.product.product',
+                'product.product_variations.attribute',
+                'product.product_variations.attribute_value.color',
+                'giftCard'
+            ];
+
+            if ($productType === 'box_design') {
+                $relationships[] = 'boxDesign';
+            }
+
+            $cartItem->load($relationships);
+
+            // Get cart count
+            $cartCount = $userId
+                ? \App\Models\Cart::where('user_id', $userId)->count()
+                : \App\Models\Cart::where('session_id', $sessionId)->count();
+
+            DB::commit();
+
+            LogActivity::successLog('Cart item added successfully', [
+                'type' => $productType,
+                'id' => $productType === 'box_design' ? $boxDesignId : $productId,
+                'cart_id' => $cartItem->id
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Added to cart',
+                'count_bottom' => $cartCount,
+                'cart_item' => new CartsResource($cartItem)
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Cart store failed: ' . $e->getMessage(), [
+                'exception' => $e,
+                'request' => $request->all()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to add to cart',
+                'error' => env('APP_DEBUG') ? $e->getMessage() : 'An error occurred'
+            ], 500);
         }
-
-        $cartItem->load($relationships);
-
-        // Get cart count - optimized query
-        $cartCount = $userId
-            ? \App\Models\Cart::where('user_id', $userId)->count()
-            : \App\Models\Cart::where('session_id', $sessionId)->count();
-
-        DB::commit();
-
-        LogActivity::successLog('Cart item added successfully', [
-            'type' => $productType,
-            'id' => $productType === 'box_design' ? $boxDesignId : $productId,
-            'cart_id' => $cartItem->id
-        ]);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Added to cart',
-            'count_bottom' => $cartCount,
-            'cart_item' => new CartsResource($cartItem)
-        ]);
-
-    } catch (\Illuminate\Validation\ValidationException $e) {
-        DB::rollBack();
-        return response()->json([
-            'success' => false,
-            'message' => 'Validation failed',
-            'errors' => $e->errors()
-        ], 422);
-    } catch (\Exception $e) {
-        DB::rollBack();
-        Log::error('Cart store failed: ' . $e->getMessage(), [
-            'exception' => $e,
-            'request' => $request->all()
-        ]);
-        
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to add to cart',
-            'error' => env('APP_DEBUG') ? $e->getMessage() : 'An error occurred'
-        ], 500);
     }
-}
     public function update(Request $request){
         $this->cartService->update($request->except('_token'));
         return $this->reloadWithData();

@@ -10,6 +10,7 @@ use App\Console\Commands\SellerSubscription;
 use App\Console\Commands\PushNotificationCommamd;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Console\Kernel as ConsoleKernel;
+use App\Models\Cart;
 
 class Kernel extends ConsoleKernel
 {
@@ -34,6 +35,20 @@ class Kernel extends ConsoleKernel
         $schedule->command('command:sellerSubscription')->daily();
         $schedule->command('command:pushNotificatons')->everyMinute();
         $schedule->command('command:auctionendcheck')->everyMinute();
+
+        $schedule->call(function () {
+            Cart::where('product_type', 'product')
+                ->whereDoesntHave('product')
+                ->delete();
+                
+            Cart::where('product_type', 'gift_card')
+                ->whereDoesntHave('giftCard')
+                ->delete();
+                
+            Cart::where('product_type', 'box_design')
+                ->whereDoesntHave('boxDesign')
+                ->delete();
+        })->daily();
     }
 
 

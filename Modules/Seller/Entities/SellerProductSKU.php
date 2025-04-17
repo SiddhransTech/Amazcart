@@ -81,7 +81,7 @@ class SellerProductSKU extends Model
     }
 
     public function wholeSalePrices(){
-        return $this->hasMany(WholesalePrice::class,'sku_id','id');
+        return $this->hasMany(WholesalePrice::class,'seller_product_sku_id','id');
     }
     public function products(){
         return $this->belongsTo(SellerProduct::class,'product_id','id');
