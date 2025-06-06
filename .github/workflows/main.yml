@@ -35,12 +35,18 @@ jobs:
           sshpass -e ssh -o StrictHostKeyChecking=no -p ${{ secrets.HOSTINGER_PORT }} \
             ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }} << 'EOF'
               cd ${{ secrets.HOSTINGER_PATH }}
-              echo "Updating Composer to v2..."
+
+              echo "Downloading Composer installer..."
               php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
-              php composer-setup.php --install-dir=/usr/local/bin --filename=composer
+
+              echo "Installing Composer locally as composer.phar..."
+              php composer-setup.php --install-dir=. --filename=composer.phar
+
               rm composer-setup.php
-              composer --version
+
+              echo "Using locally installed Composer:"
+              php composer.phar --version
 
               echo "Running composer install..."
-              composer install --no-dev --optimize-autoloader
+              php composer.phar install --no-dev --optimize-autoloader
           EOF
