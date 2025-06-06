@@ -8,8 +8,6 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    env:
-      FORCE_COMPOSER: ${{ secrets.FORCE_COMPOSER }}
 
     steps:
       - name: Checkout code
@@ -26,27 +24,3 @@ jobs:
             -e "ssh -o StrictHostKeyChecking=no -p ${{ secrets.HOSTINGER_PORT }}" \
             ./ \
             ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:${{ secrets.HOSTINGER_PATH }}
-
-      - name: Install Composer 2 and Run composer install (if FORCE_COMPOSER is true)
-        if: ${{ env.FORCE_COMPOSER == 'true' }}
-        env:
-          SSHPASS: ${{ secrets.HOSTINGER_PASS }}
-        run: |
-          sshpass -e ssh -o StrictHostKeyChecking=no -p ${{ secrets.HOSTINGER_PORT }} \
-            ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }} << 'EOF'
-              cd ${{ secrets.HOSTINGER_PATH }}
-
-              echo "Downloading Composer installer..."
-              php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
-
-              echo "Installing Composer locally as composer.phar..."
-              php composer-setup.php --install-dir=. --filename=composer.phar
-
-              rm composer-setup.php
-
-              echo "Using locally installed Composer:"
-              php composer.phar --version
-
-              echo "Running composer install..."
-              php composer.phar install --no-dev --optimize-autoloader
-          EOF
