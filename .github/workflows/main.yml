@@ -16,33 +16,7 @@ jobs:
       - name: Install sshpass
         run: sudo apt-get update && sudo apt-get install -y sshpass
 
-      - name: Check if composer install is required
-        id: composer_check
-        run: |
-          echo "Checking composer.json and composer.lock changes..."
-          git fetch origin main
-          CHANGED=$(git diff --name-only HEAD~1 HEAD | grep -E 'composer\.json|composer\.lock' || true)
-
-          if [ -n "$CHANGED" ]; then
-            echo "SHOULD_COMPOSER_INSTALL=true" >> $GITHUB_ENV
-          elif [ "${{ secrets.FORCE_COMPOSER }}" = "true" ]; then
-            echo "Manual override: composer install will run."
-            echo "SHOULD_COMPOSER_INSTALL=true" >> $GITHUB_ENV
-          else
-            echo "No need to run composer install."
-            echo "SHOULD_COMPOSER_INSTALL=false" >> $GITHUB_ENV
-          fi
-
-      - name: Run composer install on Hostinger (if needed)
-        if: env.SHOULD_COMPOSER_INSTALL == 'true'
-        env:
-          SSHPASS: ${{ secrets.HOSTINGER_PASS }}
-        run: |
-          sshpass -e ssh -o StrictHostKeyChecking=no -p ${{ secrets.HOSTINGER_PORT }} \
-            ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }} \
-            "cd ${{ secrets.HOSTINGER_PATH }} && composer install --no-dev --optimize-autoloader"
-
-      - name: Deploy code to Hostinger via rsync
+      - name: Deploy via rsync over SSH
         env:
           SSHPASS: ${{ secrets.HOSTINGER_PASS }}
         run: |
@@ -50,3 +24,21 @@ jobs:
             -e "ssh -o StrictHostKeyChecking=no -p ${{ secrets.HOSTINGER_PORT }}" \
             ./ \
             ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:${{ secrets.HOSTINGER_PATH }}
+
+      - name: Install Composer 2 and Run composer install (if FORCE_COMPOSER is true)
+        if: ${{ env.FORCE_COMPOSER == 'true' }}
+        env:
+          SSHPASS: ${{ secrets.HOSTINGER_PASS }}
+        run: |
+          sshpass -e ssh -o StrictHostKeyChecking=no -p ${{ secrets.HOSTINGER_PORT }} \
+            ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }} << 'EOF'
+              cd ${{ secrets.HOSTINGER_PATH }}
+              echo "Updating Composer to v2..."
+              php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
+              php composer-setup.php --install-dir=/usr/local/bin --filename=composer
+              rm composer-setup.php
+              composer --version
+
+              echo "Running composer install..."
+              composer install --no-dev --optimize-autoloader
+          EOF
