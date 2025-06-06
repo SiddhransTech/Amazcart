@@ -3,7 +3,7 @@ name: Deploy to Hostinger via SSH (Password Auth)
 on:
   push:
     branches:
-      - main  # Change to 'develop' if needed
+      - main
 
 jobs:
   deploy:
@@ -16,11 +16,28 @@ jobs:
       - name: Install sshpass
         run: sudo apt-get update && sudo apt-get install -y sshpass
 
+      - name: Check if composer files changed
+        id: check_composer
+        run: |
+          git fetch origin main
+          CHANGED=$(git diff --name-only HEAD~1 HEAD | grep -E 'composer\.json|composer\.lock' || true)
+          echo "changed_files=$CHANGED" >> $GITHUB_OUTPUT
+
+      - name: Run composer install on Hostinger (if needed)
+        if: steps.check_composer.outputs.changed_files != ''
+        env:
+          SSHPASS: ${{ secrets.HOSTINGER_PASS }}
+        run: |
+          echo "Composer files changed. Running composer install on server..."
+          sshpass -e ssh -o StrictHostKeyChecking=no -p ${{ secrets.HOSTINGER_PORT }} \
+            ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }} \
+            "cd ${{ secrets.HOSTINGER_PATH }} && composer install --no-dev --optimize-autoloader"
+
       - name: Deploy via rsync over SSH
         env:
           SSHPASS: ${{ secrets.HOSTINGER_PASS }}
         run: |
-          sshpass -e rsync -avz --exclude='vendor' \
+          sshpass -e rsync -avz --exclude='vendor' --exclude='.git' --exclude='node_modules' \
             -e "ssh -o StrictHostKeyChecking=no -p ${{ secrets.HOSTINGER_PORT }}" \
             ./ \
             ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:${{ secrets.HOSTINGER_PATH }}
