@@ -1,5 +1,5 @@
 <?php
-
+//   cart controller 
 namespace App\Http\Controllers\Frontend;
 use App\Http\Controllers\Controller;
 use App\Services\CartService;
@@ -84,6 +84,65 @@ class CartController extends Controller
             return $e;
         }
     }
+
+
+    public function getBoxDesignCartItems()
+{
+    try {
+        // Initialize cart collection
+        $carts = collect();
+
+        // Fetch cart items based on user authentication
+        if (auth()->check()) {
+            $carts = \App\Models\Cart::with(['boxDesign'])
+                ->where('user_id', auth()->user()->id)
+                ->where('product_type', 'box_design')
+                ->whereHas('boxDesign')
+                ->get();
+        } else {
+            $carts = \App\Models\Cart::with(['boxDesign'])
+                ->where('session_id', session()->getId())
+                ->where('product_type', 'box_design')
+                ->whereHas('boxDesign')
+                ->get();
+        }
+
+        // Calculate total items
+        $items = $carts->sum('qty');
+
+        // Log successful retrieval
+        LogActivity::successLog('Box design cart items retrieved successfully.');
+
+        // Prepare response data
+        $cartData = $carts->groupBy('seller_id'); // Group by seller if needed
+        $shipping_costs = $this->cartService->getCartData()['shipping_charge']; // Reuse existing service method
+        $free_shipping = $this->cartService->getFreeShipping();
+
+        // Return view or JSON response based on your application's needs
+        if (request()->expectsJson()) {
+            return response()->json([
+                'success' => true,
+                'cartData' => CartsResource::collection($carts),
+                'items' => $items,
+                'shipping_costs' => $shipping_costs,
+                'free_shipping' => $free_shipping
+            ]);
+        }
+
+        // Return view for non-JSON requests
+        if (isModuleActive('MultiVendor') && app('general_setting')->seller_wise_payment) {
+            return view(theme('pages.cart_seller_to_seller'), compact('cartData', 'shipping_costs', 'free_shipping'));
+        }
+        return view(theme('pages.cart'), compact('cartData', 'shipping_costs', 'free_shipping'));
+
+    } catch (\Exception $e) {
+        LogActivity::errorLog('Failed to retrieve box design cart items: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => env('APP_DEBUG') ? $e->getMessage() : 'An error occurred'
+        ], 500);
+    }
+}
     // public function store(Request $request){
     //     try{
     //         $result = $this->cartService->store($request->except('_token'));
