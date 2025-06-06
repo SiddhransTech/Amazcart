@@ -8,6 +8,8 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      FORCE_COMPOSER: ${{ secrets.FORCE_COMPOSER }}
 
     steps:
       - name: Checkout code
