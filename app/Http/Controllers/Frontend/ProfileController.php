@@ -154,6 +154,23 @@ class ProfileController extends Controller
                     $query->where('customer_id', auth()->id());
                 })->latest()->paginate(5);
 
+                $data['customBoxChart'] = \App\Models\Cart::with([
+                    'boxDesign',   
+                    'product.product.product',
+                    'giftCard',
+                    'product.product_variations.attribute',
+                    'product.product_variations.attribute_value.color',
+                ])
+                ->where('user_id', auth()->user()->id)
+                ->where('product_type', 'box_design')
+                ->whereHas('boxDesign')
+                ->latest()
+                ->take(4)
+                ->get();
+                
+                \Log::debug('Custom Box Chart data:', ['customBoxChart' => $data['customBoxChart']]);
+                
+
                 $data['carts'] = \App\Models\Cart::with('product.product.product','giftCard','product.product_variations.attribute', 'product.product_variations.attribute_value.color')->where('user_id',auth()->user()->id)->where('product_type', 'product')->whereHas('product',function($query){
                         return $query->where('status', 1)->whereHas('product', function($q){
                             return $q->activeSeller();

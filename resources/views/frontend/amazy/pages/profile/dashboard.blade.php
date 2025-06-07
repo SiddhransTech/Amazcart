@@ -318,6 +318,73 @@
                                 </div>
                             </div>
                         </div>
+                        <div class="col-lg-6 ">
+
+
+    <div class="dashboard_white_box bg-white mb_25 amazy_full_height">
+        <div class="dashboard_white_box_header d-flex align-items-center gap_15 amazy_bb3 pb_10 mb_5">
+            <h3 class="font_20 f_w_700 mb-0 flex-fill">{{ __('CusomBox Product in Cart') }}</h3>
+            <a href="{{ url('/cart') }}" class="amaz_badge_btn2 text-uppercase">{{ __('common.see_all') }}</a>
+        </div>
+        <div class="dashboard_white_box_body">
+            <div class="dash_product_lists">
+                @forelse ($carts as $key => $cart)
+                
+
+                    @if($cart->product_type == 'box_design')
+                        @php
+                            // Use null safe operator to prevent errors
+                            $product = $cart->product?->product;
+                            $grandProduct = $product?->product; 
+                            $imageSource = null;
+                            if ($grandProduct?->product_type == 1) {
+                                $imageSource = showImage($grandProduct->thumbnail_image_source);
+                            } else {
+                                $imageSource = showImage($cart->product?->sku?->variant_image ?? $grandProduct->thumbnail_image_source);
+                            }
+                        @endphp
+
+                        <a href="{{ singleProductURL($cart->seller->slug ?? '#', $product->slug ?? '#') }}" class="dashboard_order_list d-flex align-items-center flex-wrap gap_20">
+                            <div class="thumb">
+                                <img class="img-fluid" src="{{ $imageSource }}" alt="{{ textLimit($product->product_name ?? 'No Name', 28) }}" title="{{ textLimit($product->product_name ?? 'No Name', 28) }}">
+                            </div>
+                            <div class="dashboard_order_content">
+                                <h4 class="font_16 f_w_700 mb-1 lh-base theme_hover">{{ textLimit($product->product_name ?? 'No Name', 28) }}</h4>
+                                <p class="font_14 f_w_500 d-flex align-items-center gap-2">
+                                    @if (getProductwitoutDiscountPrice($product) != single_price(0))
+                                        <span class="discount_prise text-decoration-line-through">{{ getProductwitoutDiscountPrice($product) }} </span>
+                                    @endif
+                                    <span class="secondary_text">{{ single_price($cart->price) }}</span>
+                                </p>
+                            </div>
+                        </a>
+                    @else
+                        @if(!empty($cart->giftCard) && !empty($cart->giftCard->sku))
+                            <a href="{{ route('frontend.gift-card.show', $cart->giftCard->sku) }}" class="dashboard_order_list d-flex align-items-center flex-wrap gap_20">
+                                <div class="thumb">
+                                    <img class="img-fluid" src="{{ showImage($cart->giftCard->thumbnail_image) }}" alt="{{ textLimit($cart->giftCard->name, 28) }}" title="{{ textLimit($cart->giftCard->name, 28) }}">
+                                </div>
+                                <div class="dashboard_order_content">
+                                    <h4 class="font_16 f_w_700 mb-1 lh-base theme_hover">{{ textLimit($cart->giftCard->name, 28) }}</h4>
+                                    <p class="font_14 f_w_500 d-flex align-items-center gap-2">
+                                        @if(getGiftcardwithoutDiscountPrice($cart->giftCard) != single_price(0))
+                                            <span class="discount_prise text-decoration-line-through">{{ getGiftcardwithoutDiscountPrice($cart->giftCard) }}</span>
+                                        @endif
+                                        <span class="secondary_text">{{ single_price($cart->price) }}</span>
+                                    </p>
+                                </div>
+                            </a>
+                        @else
+                            <div class="text-muted">Invalid gift card data</div>
+                        @endif
+                    @endif
+                @empty
+                    <p>{{ __('No items in cart.') }}</p>
+                @endforelse
+            </div>
+        </div>
+    </div>
+</div>
 
                     </div>
                 </div>
