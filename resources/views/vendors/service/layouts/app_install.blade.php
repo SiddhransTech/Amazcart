@@ -3,7 +3,7 @@
 
 <head>
     @php
-        $base_path = 'vendor/spondonit';
+        $base_path = 'public/vendor/spondonit';
     @endphp
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
